@@ -1,5 +1,8 @@
 name: Build ipk for HomeProxy
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
 
@@ -115,6 +118,18 @@ jobs:
           name: ${{ env.IPK_ASSET_NAME }}
           path: .github/${{ env.IPK_ASSET_NAME }}
           archive: false
+
+      - name: Publishing APK file to dist
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p dist
+          rm -f dist/luci-app-homeproxy_*.apk
+          cp ".github/${APK_ASSET_NAME}" dist/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist
+          git commit -m "ci: publish apk artifact for ${GITHUB_SHA::7}" || exit 0
+          git push
 
       - name: Publishing to GitHub Releases
         uses: svenstaro/upload-release-action@v2
