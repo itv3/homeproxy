@@ -118,36 +118,111 @@ return view.extend({
 					String.format('[%s]', nodeaddr) : nodeaddr) + ':' + nodeport));
 		});
 
-		let renderMetacubexdLink = function(o) {
+		let dashboardBaseUrl = function() {
+			let dashboard = uci.get(data[0], 'config', 'metacubexd_url') || 'https://metacubexd.pages.dev/#/overview',
+			    hash = dashboard.indexOf('#');
+
+			if (hash >= 0)
+				dashboard = dashboard.slice(0, hash);
+
+			return dashboard.replace(/\/+$/, '');
+		};
+
+		let dashboardConfiguredUrl = function() {
+			return uci.get(data[0], 'config', 'metacubexd_url') || 'https://metacubexd.pages.dev/#/overview';
+		};
+
+		let dashboardSetupUrl = function() {
 			let enabled = uci.get(data[0], 'config', 'clash_api_enabled') === '1',
 			    controller = parseController(uci.get(data[0], 'config', 'clash_api_external_controller') || '192.168.9.1:9090'),
-			    secret = uci.get(data[0], 'config', 'clash_api_secret') || '',
-			    dashboard = uci.get(data[0], 'config', 'metacubexd_url') || 'https://metacubexd.pages.dev';
+			    secret = uci.get(data[0], 'config', 'clash_api_secret') || '';
 
-			if (!enabled) {
-				o.default = E('em', {}, _('Clash API is disabled.'));
-				return;
-			}
+			if (!enabled || !controller.hostname)
+				return null;
 
-			if (!controller.hostname) {
-				o.default = E('em', {}, _('Invalid Clash API controller address.'));
-				return;
-			}
+			let dashboard = dashboardConfiguredUrl(),
+			    base = dashboardBaseUrl();
 
-			let url = new URL('/setup', dashboard.replace(/\/+$/, '') + '/');
-			url.searchParams.set('hostname', controller.hostname);
+			if (dashboard.includes('yacd.metacubex.one'))
+				return dashboard;
+
+			let params = new URLSearchParams();
+			params.set('hostname', controller.hostname);
 			if (controller.port)
-				url.searchParams.set('port', controller.port);
-			url.searchParams.set(controller.https ? 'https' : 'http', '1');
+				params.set('port', controller.port);
+			params.set(controller.https ? 'https' : 'http', '1');
 			if (secret)
-				url.searchParams.set('secret', secret);
+				params.set('secret', secret);
 
-			o.default = E('a', {
+			return base + '/#/setup?' + params.toString();
+		};
+
+		let renderDashboardButton = function() {
+			let url = dashboardSetupUrl();
+
+			if (!url)
+				return null;
+
+			return E('a', {
 				'class': 'btn cbi-button cbi-button-action',
-				'href': url.toString(),
+				'href': url,
 				'target': '_blank',
 				'rel': 'noreferrer noopener'
-			}, [ _('Open MetaCubeXD') ]);
+			}, [ _('Open proxy dashboard') ]);
+		};
+
+		let routingNodeName = function(res) {
+			let type = _('Routing node');
+			if (res.node === 'urltest')
+				type = _('URLTest');
+			else if (res.node === 'selector')
+				type = _('Selector');
+
+			return String.format('[%s] %s',
+				type, res.label || res['.name']);
+		};
+
+		let addSelectableOutbounds = function(option, section_id, include_routing_nodes) {
+			for (let i in proxy_nodes)
+				option.value(i, proxy_nodes[i]);
+
+			if (!include_routing_nodes)
+				return;
+
+			uci.sections(data[0], 'routing_node', (res) => {
+				if (res.enabled === '1' && res['.name'] !== section_id)
+					option.value(res['.name'], routingNodeName(res));
+			});
+		};
+
+		let selectorHasPath = function(start, target, seen) {
+			if (!start || !target)
+				return false;
+			if (start === target)
+				return true;
+			if (seen[start])
+				return false;
+
+			seen[start] = true;
+
+			let found = false;
+			uci.sections(data[0], 'routing_node', (res) => {
+				if (found || res['.name'] !== start)
+					return;
+
+				let nodes = res.node === 'urltest' ? res.urltest_nodes : res.selector_nodes;
+				for (let i in (nodes || [])) {
+					if (nodes[i] === target || selectorHasPath(nodes[i], target, seen)) {
+						found = true;
+						return;
+					}
+				}
+
+				if (res.outbound === target || selectorHasPath(res.outbound, target, seen))
+					found = true;
+			});
+
+			return found;
 		};
 
 		m = new form.Map('homeproxy', _('HomeProxy'),
@@ -163,7 +238,8 @@ return view.extend({
 			});
 
 			return E('div', { class: 'cbi-section', id: 'status_bar' }, [
-					E('p', { id: 'service_status' }, _('Collecting data...'))
+					E('p', { id: 'service_status' }, _('Collecting data...')),
+					renderDashboardButton() || ''
 			]);
 		}
 
@@ -349,64 +425,6 @@ return view.extend({
 		o = s.taboption('routing', form.Flag, 'ipv6_support', _('IPv6 support'));
 		o.default = o.enabled;
 		o.rmempty = false;
-
-		o = s.taboption('routing', form.Flag, 'clash_api_enabled', _('Clash API'));
-		o.default = o.disabled;
-		o.rmempty = false;
-
-		o = s.taboption('routing', form.Value, 'clash_api_external_controller', _('Clash API controller'));
-		o.placeholder = '192.168.9.1:9090';
-		o.depends('clash_api_enabled', '1');
-		o.validate = function(section_id, value) {
-			if (section_id && value && !parseController(value).hostname)
-				return _('Expecting: %s').format(_('valid address'));
-
-			return true;
-		}
-
-		o = s.taboption('routing', form.Value, 'clash_api_secret', _('Clash API secret'));
-		o.password = true;
-		o.depends('clash_api_enabled', '1');
-
-		o = s.taboption('routing', form.ListValue, 'clash_api_default_mode', _('Clash API mode'));
-		o.value('Rule');
-		o.value('Global');
-		o.value('Direct');
-		o.default = 'Rule';
-		o.depends('clash_api_enabled', '1');
-
-		o = s.taboption('routing', hp.CBIStaticList, 'clash_api_allow_origin', _('Clash API allowed origins'));
-		o.value('https://metacubex.github.io');
-		o.value('https://metacubexd.pages.dev');
-		o.value('http://d.metacubex.one');
-		o.value('https://yacd.metacubex.one');
-		o.depends('clash_api_enabled', '1');
-
-		o = s.taboption('routing', form.Flag, 'clash_api_allow_private_network', _('Allow private network'));
-		o.default = o.enabled;
-		o.rmempty = false;
-		o.depends('clash_api_enabled', '1');
-
-		o = s.taboption('routing', form.Value, 'metacubexd_url', _('MetaCubeXD URL'));
-		o.placeholder = 'https://metacubexd.pages.dev';
-		o.depends('clash_api_enabled', '1');
-		o.validate = function(section_id, value) {
-			if (section_id && value) {
-				try {
-					let url = new URL(value);
-					if (!url.hostname)
-						return _('Expecting: %s').format(_('valid URL'));
-				} catch(e) {
-					return _('Expecting: %s').format(_('valid URL'));
-				}
-			}
-
-			return true;
-		}
-
-		o = s.taboption('routing', form.DummyValue, '_metacubexd_link', _('MetaCubeXD'));
-		o.depends('clash_api_enabled', '1');
-		o.cfgvalue = L.bind(renderMetacubexdLink, this, o);
 
 		/* Custom routing settings start */
 		/* Routing settings start */
@@ -622,13 +640,22 @@ return view.extend({
 
 		so = ss.option(hp.CBIStaticList, 'selector_nodes', _('Selector nodes'),
 			_('List of manually selectable nodes.'));
-		for (let i in proxy_nodes)
-			so.value(i, proxy_nodes[i]);
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			addSelectableOutbounds(this, section_id, true);
+
+			return this.super('load', section_id);
+		}
 		so.depends('node', 'selector');
 		so.validate = function(section_id) {
 			let value = this.section.formvalue(section_id, 'selector_nodes');
 			if (section_id && !value.length)
 				return _('Expecting: %s').format(_('non-empty value'));
+			for (let i in value)
+				if (selectorHasPath(value[i], section_id, {}))
+					return _('Recursive outbound detected!');
 
 			return true;
 		}
@@ -640,8 +667,7 @@ return view.extend({
 			delete this.vallist;
 
 			this.value('', _('Default'));
-			for (let i in proxy_nodes)
-				this.value('cfg-' + i + '-out', proxy_nodes[i]);
+			addSelectableOutbounds(this, section_id, true);
 
 			return this.super('load', section_id);
 		}

@@ -407,6 +407,41 @@ function push_node_outbound(client_config, node, tag, routing_cfg) {
 	}
 }
 
+function get_routing_target_outbound(target) {
+	const match_target = match(target || '', /^cfg-(.+)-out$/);
+	if (match_target)
+		target = match_target[1];
+
+	if (isEmpty(target))
+		return null;
+
+	const routing_node = uci.get(uciconfig, target, 'node');
+	if (isEmpty(routing_node) || routing_node === 'urltest' || routing_node === 'selector')
+		return 'cfg-' + target + '-out';
+
+	return 'cfg-' + routing_node + '-out';
+}
+
+function push_routing_target_outbound(client_config, target, routing_nodes) {
+	const match_target = match(target || '', /^cfg-(.+)-out$/);
+	if (match_target)
+		target = match_target[1];
+
+	if (isEmpty(target) || ~index(routing_nodes, target))
+		return;
+
+	const routing_node = uci.get(uciconfig, target, 'node');
+	if (isEmpty(routing_node)) {
+		const node = uci.get_all(uciconfig, target) || {};
+		push_node_outbound(client_config, node, 'cfg-' + target + '-out');
+		push(routing_nodes, target);
+	} else if (!(routing_node in ['urltest', 'selector'])) {
+		push_routing_target_outbound(client_config, routing_node, routing_nodes);
+	} else {
+		return;
+	}
+}
+
 function get_outbound(cfg) {
 	if (isEmpty(cfg))
 		return null;
@@ -799,8 +834,8 @@ if (!isEmpty(main_node)) {
 			push(config.outbounds, {
 				type: 'selector',
 				tag: 'cfg-' + cfg['.name'] + '-out',
-				outbounds: map(cfg.selector_nodes, (k) => `cfg-${k}-out`),
-				default: cfg.selector_default,
+				outbounds: map(cfg.selector_nodes, get_routing_target_outbound),
+				default: get_routing_target_outbound(cfg.selector_default),
 				interrupt_exist_connections: strToBool(cfg.selector_interrupt_exist_connections)
 			});
 			group_nodes = [...group_nodes, ...filter(cfg.selector_nodes, (l) => !~index(group_nodes, l))];
@@ -812,8 +847,7 @@ if (!isEmpty(main_node)) {
 	});
 
 	for (let i in filter(group_nodes, (l) => !~index(routing_nodes, l))) {
-		const group_node = uci.get_all(uciconfig, i) || {};
-		push_node_outbound(config, group_node, 'cfg-' + i + '-out');
+		push_routing_target_outbound(config, i, routing_nodes);
 	}
 }
 
