@@ -1,10 +1,13 @@
 name: Build ipk for HomeProxy
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
       - 'master'
       - 'dev'
+      - 'custom/**'
     paths:
       - 'htdocs/**'
       - 'po/**'
