@@ -340,23 +340,6 @@ ubus call luci.homeproxy connection_check '{"site":"google"}'
 
 如果上游更新提醒 Issue 还开着，确认自定义分支已经包含上游最新版后，可以关闭该 Issue。
 
-## 提交给上游的建议
-
-如果要向上游提交合并请求，建议拆成几个小 PR：
-
-1. SS2022 + ShadowTLS 节点支持。
-2. 路由节点支持 Selector。
-3. 路由规则出站支持直接选择具体节点。
-4. Clash API 和 MetaCubeXD 快捷入口。
-
-其中第 4 点可能有安全和默认行为争议，更适合做成可选配置，不建议强制默认开启。
-
-不建议提交给上游的内容：
-
-- `dist/` 下的 APK。
-- 个人 fork 的 Release 自动发布逻辑。
-- 自定义 `99.` 版本号策略。
-
 ## 注意
 
 MetaCubeXD 的规则开关对当前 sing-box Clash API 不生效。sing-box 当前只提供 `/rules` 读取接口，没有实现 `PATCH /rules/disable` 这种运行时禁用规则的接口。
