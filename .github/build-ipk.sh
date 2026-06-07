@@ -29,6 +29,7 @@ fi
 TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
 TEMP_PKG_DIR="$TEMP_DIR/$PKG_NAME"
 mkdir -p "$TEMP_PKG_DIR/lib/upgrade/keep.d/"
+mkdir -p "$TEMP_PKG_DIR/usr/lib/lua/luci/i18n/"
 mkdir -p "$TEMP_PKG_DIR/www/"
 if [ "$PKG_MGR" == "apk" ]; then
 	mkdir -p "$TEMP_PKG_DIR/lib/apk/packages/"
