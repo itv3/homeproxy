@@ -697,7 +697,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	}
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'shadowtls_sni', _('ShadowTLS 服务器名称'));
+	o = s.option(form.Value, 'shadowtls_sni', _('ShadowTLS 伪装 SNI'));
 	o.datatype = 'hostname';
 	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
 	o.modalonly = true;
