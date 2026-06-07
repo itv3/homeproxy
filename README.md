@@ -117,6 +117,102 @@ sing-box check -c /var/run/homeproxy/sing-box-c.json
 /etc/init.d/homeproxy status
 ```
 
+## 给开发者 / AI 的维护说明
+
+只看本 README 应该能完成一次新功能开发和发布。当前自定义版主要涉及下面几类文件：
+
+```text
+htdocs/luci-static/resources/view/homeproxy/client.js   # 客户端页面、路由节点、路由规则、打开面板按钮
+htdocs/luci-static/resources/view/homeproxy/node.js     # 节点页面、SS2022 + ShadowTLS 表单
+root/etc/homeproxy/scripts/generate_client.uc           # 生成 sing-box 客户端配置
+root/etc/homeproxy/scripts/migrate_config.uc            # 旧配置迁移和默认配置补齐
+root/etc/config/homeproxy                               # 新安装时的默认配置
+.github/build-ipk.sh                                    # APK/IPK 打包脚本
+.github/workflows/build-ipk.yml                        # push 后自动构建并把 APK 写入 dist/
+.github/workflows/release-dist.yml                     # tag 后发布 GitHub Release
+install.sh                                              # 路由器一键安装脚本
+dist/luci-app-homeproxy_*.apk                           # 当前分支最新构建包，由 Actions 自动更新
+```
+
+### 开发新功能
+
+```sh
+git clone git@github.com:itv3/homeproxy.git
+cd homeproxy
+git checkout custom/homeproxy-enhancements
+git remote add upstream https://github.com/immortalwrt/homeproxy.git 2>/dev/null || true
+git fetch origin
+git fetch upstream
+```
+
+修改代码后先做基本检查：
+
+```sh
+git diff --check
+sh -n install.sh
+```
+
+如果改了 GitHub Actions workflow，可额外检查 YAML：
+
+```sh
+ruby -e 'require "yaml"; YAML.load_file(".github/workflows/build-ipk.yml"); YAML.load_file(".github/workflows/release-dist.yml"); puts "yaml ok"'
+```
+
+提交并推送：
+
+```sh
+git add <changed-files>
+git commit -m "feat: describe the change"
+git push origin custom/homeproxy-enhancements
+```
+
+推送后 GitHub Actions 会自动构建 APK，并由 bot 再提交一次 `dist/luci-app-homeproxy_*.apk`。发布 Release 前必须先拉取这个 bot 提交，否则 Release 里会拿到旧 APK：
+
+```sh
+git pull --ff-only origin custom/homeproxy-enhancements
+ls -lh dist/luci-app-homeproxy_*.apk
+shasum -a 256 dist/luci-app-homeproxy_*.apk
+```
+
+### 发布新版本
+
+tag 必须打在已经包含最新 `dist/` APK 的提交上。推荐格式：
+
+```sh
+FEATURE_SHA="$(git log --format=%h --no-merges -n 1 -- . ':!dist')"
+TAG="custom-$(date +%Y%m%d)-${FEATURE_SHA}"
+git tag -a "$TAG" -m "HomeProxy Custom ${TAG#custom-}"
+git push origin "$TAG"
+```
+
+推送 tag 后，`Release custom APK` workflow 会创建 GitHub Release，并只上传两个文件：
+
+```text
+luci-app-homeproxy-custom_all.apk
+SHA256SUMS.txt
+```
+
+发布后检查：
+
+```sh
+curl -fsSL https://api.github.com/repos/itv3/homeproxy/releases/latest \
+  | jq -r '.tag_name, .assets[].name, .assets[].digest'
+```
+
+### 路由器实机验证
+
+推荐至少验证一次安装和服务状态：
+
+```sh
+wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
+apk list -I | grep luci-app-homeproxy
+find /etc/homeproxy /etc/config -name "*.apk-new" -print
+ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
+sing-box check -c /var/run/homeproxy/sing-box-c.json
+/etc/init.d/homeproxy status
+ubus call luci.homeproxy connection_check '{"site":"google"}'
+```
+
 ## HomeProxy 上游更新后怎么办
 
 不要直接用上游包覆盖本自定义包。推荐流程：
