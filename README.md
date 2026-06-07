@@ -115,6 +115,8 @@ apk list -I | grep luci-app-homeproxy
 ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
 sing-box check -c /var/run/homeproxy/sing-box-c.json
 /etc/init.d/homeproxy status
+sleep 2
+ubus call luci.homeproxy connection_check '{"site":"google"}'
 ```
 
 ## 给开发者 / AI 的维护说明
@@ -210,6 +212,7 @@ find /etc/homeproxy /etc/config -name "*.apk-new" -print
 ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
 sing-box check -c /var/run/homeproxy/sing-box-c.json
 /etc/init.d/homeproxy status
+sleep 2
 ubus call luci.homeproxy connection_check '{"site":"google"}'
 ```
 
