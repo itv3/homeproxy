@@ -29,7 +29,6 @@ fi
 TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
 TEMP_PKG_DIR="$TEMP_DIR/$PKG_NAME"
 mkdir -p "$TEMP_PKG_DIR/lib/upgrade/keep.d/"
-mkdir -p "$TEMP_PKG_DIR/usr/lib/lua/luci/i18n/"
 mkdir -p "$TEMP_PKG_DIR/www/"
 if [ "$PKG_MGR" == "apk" ]; then
 	mkdir -p "$TEMP_PKG_DIR/lib/apk/packages/"
@@ -46,8 +45,6 @@ cat > "$TEMP_PKG_DIR/lib/upgrade/keep.d/$PKG_NAME" <<-EOF
 /etc/homeproxy/resources/direct_list.txt
 /etc/homeproxy/resources/proxy_list.txt
 EOF
-
-po2lmo "$PKG_DIR/po/zh_Hans/homeproxy.po" "$TEMP_PKG_DIR/usr/lib/lua/luci/i18n/homeproxy.zh-cn.lmo"
 
 if [ "$PKG_MGR" == "apk" ]; then
 	find "$TEMP_PKG_DIR" -type f,l -printf '/%P\n' | sort > "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.list"
