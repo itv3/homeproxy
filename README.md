@@ -62,11 +62,11 @@
    - 默认跳转到 <https://metacubexd.pages.dev/#/overview>。
    - 跳转时自动带入 Clash API 的 host、port、secret 等参数。
 
-6. 自定义 APK 自动发布
+6. 自定义 Release 自动发布
 
-   - push 到 `custom/homeproxy-enhancements` 后自动构建 APK。
-   - 最新 APK 会提交到 `dist/`。
-   - 打 tag 后会自动发布到 GitHub Releases。
+   - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
+   - 打 `custom-*` tag 后会现场构建 APK，并自动发布到 GitHub Releases。
+   - 一键安装和手动安装都只使用 GitHub Releases 的 latest APK。
 
 7. 定时检查上游更新
 
@@ -106,12 +106,6 @@ find /etc/homeproxy /etc/config -name "*.apk-new" -exec rm -f {} \; 2>/dev/null 
 /etc/init.d/homeproxy restart
 ```
 
-### C. 从本仓库 `dist/` 安装
-
-也可以直接下载分支中的 APK：
-
-<https://github.com/itv3/homeproxy/tree/custom/homeproxy-enhancements/dist>
-
 ## 验证
 
 安装后可执行：
@@ -136,11 +130,10 @@ root/etc/homeproxy/scripts/generate_client.uc           # 生成 sing-box 客户
 root/etc/homeproxy/scripts/migrate_config.uc            # 旧配置迁移和默认配置补齐
 root/etc/config/homeproxy                               # 新安装时的默认配置
 .github/build-ipk.sh                                    # APK/IPK 打包脚本
-.github/workflows/build-ipk.yml                        # push 后自动构建并把 APK 写入 dist/
-.github/workflows/release-dist.yml                     # tag 后发布 GitHub Release
+.github/workflows/build-ipk.yml                        # push / PR 后自动构建 APK/IPK artifact
+.github/workflows/release-custom-apk.yml               # tag 后现场构建 APK 并发布 GitHub Release
 .github/workflows/check-upstream.yml                   # 定时检查上游是否有新提交
 install.sh                                              # 路由器一键安装脚本
-dist/luci-app-homeproxy_*.apk                           # 当前分支最新构建包，由 Actions 自动更新
 ```
 
 ### 开发新功能
@@ -175,26 +168,22 @@ git commit -m "feat: describe the change"
 git push origin custom/homeproxy-enhancements
 ```
 
-推送后 GitHub Actions 会自动构建 APK，并由 bot 再提交一次 `dist/luci-app-homeproxy_*.apk`。发布 Release 前必须先拉取这个 bot 提交，否则 Release 里会拿到旧 APK：
+推送后 GitHub Actions 会自动构建 APK/IPK artifact，用来确认代码能正常打包。这个构建不会再提交 `dist/` 文件。
 
-```sh
-git pull --ff-only origin custom/homeproxy-enhancements
-ls -lh dist/luci-app-homeproxy_*.apk
-shasum -a 256 dist/luci-app-homeproxy_*.apk
-```
+进入 GitHub `Actions` 页面确认 `Build ipk for HomeProxy` 成功后，再发布 Release。
 
 ### 发布新版本
 
-tag 必须打在已经包含最新 `dist/` APK 的提交上。推荐格式：
+tag 必须打在要发布的源码提交上。推荐格式：
 
 ```sh
-FEATURE_SHA="$(git log --format=%h --no-merges -n 1 -- . ':!dist')"
+FEATURE_SHA="$(git rev-parse --short HEAD)"
 TAG="custom-$(date +%Y%m%d)-${FEATURE_SHA}"
 git tag -a "$TAG" -m "HomeProxy Custom ${TAG#custom-}"
 git push origin "$TAG"
 ```
 
-推送 tag 后，`Release custom APK` workflow 会创建 GitHub Release，并只上传两个文件：
+推送 tag 后，`Release custom APK` workflow 会现场构建 APK，创建 GitHub Release，并只上传两个文件：
 
 ```text
 luci-app-homeproxy-custom_all.apk
@@ -230,6 +219,7 @@ ubus call luci.homeproxy connection_check '{"site":"google"}'
 - 每天北京时间 10:00 自动检查一次。
 - 也可以在 GitHub 页面进入 `Actions` -> `Check upstream updates` -> `Run workflow` 手动检查。
 - 如果上游有新提交，会创建或更新一个带 `upstream-update` 标签的 Issue。
+- 如需邮件通知，在仓库页面 `Watch` -> `Custom` 中勾选 `Issues`，并在 GitHub 通知设置中为 watching 启用 `Email`。
 - 这个 workflow 只提醒，不会自动 merge，因为上游改动可能和自定义功能冲突。
 
 收到提醒后，推荐让开发者或 AI 按下面流程操作。
@@ -297,20 +287,16 @@ ssh root@192.168.9.1 'rm -rf /tmp/homeproxy-check'
 git push origin custom/homeproxy-enhancements
 ```
 
-推送后 `Build ipk for HomeProxy` workflow 会自动构建 APK，并由 bot 把新 APK 提交到 `dist/`。发布前必须先拉取 bot 提交：
+推送后 `Build ipk for HomeProxy` workflow 会自动构建 APK/IPK artifact，用来确认代码能正常打包。这个 workflow 不会再提交 `dist/` 文件。
 
-```sh
-git pull --ff-only origin custom/homeproxy-enhancements
-ls -lh dist/luci-app-homeproxy_*.apk
-shasum -a 256 dist/luci-app-homeproxy_*.apk
-```
+进入 GitHub `Actions` 页面确认 `Build ipk for HomeProxy` 成功后，再发布 Release。
 
 ### 4. 发布新的自定义 APK
 
-tag 必须打在已经包含最新 `dist/` APK 的提交上：
+tag 必须打在要发布的源码提交上：
 
 ```sh
-FEATURE_SHA="$(git log --format=%h --no-merges -n 1 -- . ':!dist')"
+FEATURE_SHA="$(git rev-parse --short HEAD)"
 TAG="custom-$(date +%Y%m%d)-${FEATURE_SHA}"
 git tag -a "$TAG" -m "HomeProxy Custom ${TAG#custom-}"
 git push origin "$TAG"

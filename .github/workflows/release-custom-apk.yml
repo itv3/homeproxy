@@ -16,10 +16,64 @@ jobs:
       - name: Checkout source tree
         uses: actions/checkout@v6
 
+      - name: Checkout apk
+        uses: actions/checkout@v6
+        with:
+          repository: 'alpinelinux/apk-tools'
+          path: 'apk-tools'
+          fetch-depth: 0
+          ref: 'b5a31c0d865342ad80be10d68f1bb3d3ad9b0866'
+
+      - name: Checkout po2lmo
+        uses: actions/checkout@v6
+        with:
+          repository: 'openwrt/luci'
+          path: 'po2lmo'
+          sparse-checkout: 'modules/luci-base/src'
+
+      - name: Setup dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E rm -rf /var/lib/man-db/auto-update
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y build-essential curl fakeroot libssl-dev lua5.1 meson ninja-build
+
+          pushd apk-tools
+          meson setup build \
+            -Db_lto=true \
+            -Dcompressed-help=false \
+            -Ddocs=disabled \
+            -Dhelp=enabled \
+            -Dlua_version=5.1 \
+            -Ddefault_library=static \
+            -Durl_backend=wget \
+            -Dzstd=false \
+            -Dpython=disabled \
+            -Dtests=disabled \
+            -Dcrypto_backend=openssl
+          ninja -C build
+          sudo -E meson install -C build --strip
+          popd
+
+          pushd po2lmo/modules/luci-base/src
+          make po2lmo
+          sudo -E install -m0755 -s po2lmo /usr/local/bin/po2lmo
+          popd
+
+          curl -fLO "https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/ipkg-build"
+          sudo install -m0755 ipkg-build /usr/local/bin/ipkg-build
+
+      - name: Build APK
+        run: |
+          pushd .github
+          fakeroot bash build-ipk.sh apk "snapshot"
+          popd
+
       - name: Prepare release assets
         run: |
           set -euo pipefail
-          apk_file="$(ls dist/luci-app-homeproxy_*.apk | head -n 1)"
+          apk_file="$(ls .github/luci-app-homeproxy_*.apk | head -n 1)"
           cp "$apk_file" luci-app-homeproxy-custom_all.apk
           sha256sum luci-app-homeproxy-custom_all.apk > SHA256SUMS.txt
           cat > RELEASE_NOTES.md <<EOF
