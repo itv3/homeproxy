@@ -23,7 +23,7 @@ PKG_NAME="$(get_mk_value "PKG_NAME")"
 if [ "$RELEASE_TYPE" == "release" ]; then
 	PKG_VERSION="$(get_mk_value "PKG_VERSION")"
 else
-	PKG_VERSION="$PKG_SOURCE_DATE_EPOCH~$(git rev-parse --short HEAD)"
+	PKG_VERSION="99.$PKG_SOURCE_DATE_EPOCH~$(git rev-parse --short HEAD)"
 fi
 
 TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
