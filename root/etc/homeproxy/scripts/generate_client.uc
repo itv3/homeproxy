@@ -351,7 +351,7 @@ function generate_outbound(node) {
 }
 
 function generate_shadowtls_outbound(node, tag) {
-	if (type(node) !== 'object' || isEmpty(node.shadowtls_address))
+	if (type(node) !== 'object' || node.shadowtls_enabled === '0' || isEmpty(node.shadowtls_address))
 		return null;
 
 	return {
@@ -367,6 +367,13 @@ function generate_shadowtls_outbound(node, tag) {
 			server_name: node.shadowtls_sni
 		}
 	};
+}
+
+function has_shadowtls_detour(node) {
+	return type(node) === 'object' &&
+	       node.type === 'shadowsocks' &&
+	       node.shadowtls_enabled !== '0' &&
+	       !isEmpty(node.shadowtls_address);
 }
 
 function apply_routing_node_options(outbound, cfg) {
@@ -393,7 +400,7 @@ function push_node_outbound(client_config, node, tag, routing_cfg) {
 		apply_routing_node_options(client_config.endpoints[length(client_config.endpoints)-1], routing_cfg);
 	} else {
 		let outbound = generate_outbound(node);
-		if (node.type === 'shadowsocks' && !isEmpty(node.shadowtls_address)) {
+		if (has_shadowtls_detour(node)) {
 			const shadowtls_tag = tag + '-shadowtls';
 			let shadowtls_outbound = generate_shadowtls_outbound(node, shadowtls_tag);
 			apply_routing_node_options(shadowtls_outbound, routing_cfg);
@@ -407,6 +414,16 @@ function push_node_outbound(client_config, node, tag, routing_cfg) {
 	}
 }
 
+function is_builtin_outbound(target) {
+	return target in ['block-out', 'direct-out'];
+}
+
+function is_node_section(target) {
+	const node = uci.get_all(uciconfig, target) || {};
+
+	return node['.type'] === ucinode;
+}
+
 function get_routing_target_outbound(target) {
 	const match_target = match(target || '', /^cfg-(.+)-out$/);
 	if (match_target)
@@ -414,6 +431,8 @@ function get_routing_target_outbound(target) {
 
 	if (isEmpty(target))
 		return null;
+	else if (is_builtin_outbound(target))
+		return target;
 
 	const routing_node = uci.get(uciconfig, target, 'node');
 	if (isEmpty(routing_node) || routing_node === 'urltest' || routing_node === 'selector')
@@ -429,12 +448,16 @@ function push_routing_target_outbound(client_config, target, routing_nodes) {
 
 	if (isEmpty(target) || ~index(routing_nodes, target))
 		return;
+	else if (is_builtin_outbound(target))
+		return;
 
 	const routing_node = uci.get(uciconfig, target, 'node');
 	if (isEmpty(routing_node)) {
-		const node = uci.get_all(uciconfig, target) || {};
-		push_node_outbound(client_config, node, 'cfg-' + target + '-out');
-		push(routing_nodes, target);
+		if (is_node_section(target)) {
+			const node = uci.get_all(uciconfig, target) || {};
+			push_node_outbound(client_config, node, 'cfg-' + target + '-out');
+			push(routing_nodes, target);
+		}
 	} else if (!(routing_node in ['urltest', 'selector'])) {
 		push_routing_target_outbound(client_config, routing_node, routing_nodes);
 	} else {
@@ -461,12 +484,14 @@ function get_outbound(cfg) {
 			return cfg;
 		default:
 			const node = uci.get(uciconfig, cfg, 'node');
-			if (isEmpty(node))
-				die(sprintf("%s's node is missing, please check your configuration.", cfg));
-			else if (node === 'urltest' || node === 'selector')
+			if (node === 'urltest' || node === 'selector')
+				return 'cfg-' + cfg + '-out';
+			else if (!isEmpty(node))
+				return 'cfg-' + node + '-out';
+			else if (is_node_section(cfg))
 				return 'cfg-' + cfg + '-out';
 			else
-				return 'cfg-' + node + '-out';
+				die(sprintf("%s's node is missing, please check your configuration.", cfg));
 		}
 	}
 }
@@ -846,9 +871,13 @@ if (!isEmpty(main_node)) {
 		}
 	});
 
-	for (let i in filter(group_nodes, (l) => !~index(routing_nodes, l))) {
+	for (let i in filter(group_nodes, (l) => !~index(routing_nodes, l)))
 		push_routing_target_outbound(config, i, routing_nodes);
-	}
+
+	uci.foreach(uciconfig, uciroutingrule, (cfg) => {
+		if (cfg.enabled === '1' && cfg.action === 'route')
+			push_routing_target_outbound(config, cfg.outbound, routing_nodes);
+	});
 }
 
 if (isEmpty(config.endpoints))

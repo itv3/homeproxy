@@ -168,7 +168,7 @@ return view.extend({
 				'href': url,
 				'target': '_blank',
 				'rel': 'noreferrer noopener'
-			}, [ _('Open proxy dashboard') ]);
+			}, [ _('打开面板') ]);
 		};
 
 		let routingNodeName = function(res) {
@@ -854,10 +854,7 @@ return view.extend({
 			delete this.vallist;
 
 			this.value('direct-out', _('Direct'));
-			uci.sections(data[0], 'routing_node', (res) => {
-				if (res.enabled === '1')
-					this.value(res['.name'], res.label);
-			});
+			addSelectableOutbounds(this, section_id, true);
 
 			return this.super('load', section_id);
 		}

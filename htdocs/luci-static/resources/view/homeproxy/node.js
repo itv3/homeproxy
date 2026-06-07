@@ -493,38 +493,6 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	}
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'shadowtls_address', _('ShadowTLS address'),
-		_('Enable ShadowTLS as the detour outbound for this Shadowsocks node.'));
-	o.datatype = 'host';
-	o.depends('type', 'shadowsocks');
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'shadowtls_port', _('ShadowTLS port'));
-	o.datatype = 'port';
-	o.placeholder = '443';
-	o.depends({'type': 'shadowsocks', 'shadowtls_address': /[\s\S]/});
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'shadowtls_password', _('ShadowTLS password'));
-	o.password = true;
-	o.depends({'type': 'shadowsocks', 'shadowtls_address': /[\s\S]/});
-	o.validate = function(section_id, value) {
-		if (section_id) {
-			let type = this.section.formvalue(section_id, 'type');
-			let address = this.section.formvalue(section_id, 'shadowtls_address');
-			if (type === 'shadowsocks' && address && !value)
-				return _('Expecting: %s').format(_('non-empty value'));
-		}
-
-		return true;
-	}
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'shadowtls_sni', _('ShadowTLS SNI'));
-	o.datatype = 'hostname';
-	o.depends({'type': 'shadowsocks', 'shadowtls_address': /[\s\S]/});
-	o.modalonly = true;
-
 	/* Direct config */
 	o = s.option(form.ListValue, 'proxy_protocol', _('Proxy protocol'),
 		_('Write proxy protocol in the connection header.'));
@@ -659,27 +627,90 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.rmempty = false;
 	o.modalonly = true;
 
-	o = s.option(form.ListValue, 'shadowsocks_plugin', _('Plugin'));
+	o = s.option(form.ListValue, 'shadowsocks_plugin', _('插件'));
 	o.value('', _('none'));
 	o.value('obfs-local');
 	o.value('v2ray-plugin');
 	o.depends('type', 'shadowsocks');
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'shadowsocks_plugin_opts', _('Plugin opts'));
+	o = s.option(form.Value, 'shadowsocks_plugin_opts', _('插件选项'));
 	o.depends('shadowsocks_plugin', 'obfs-local');
 	o.depends('shadowsocks_plugin', 'v2ray-plugin');
+	o.modalonly = true;
+
+	o = s.option(form.Flag, 'shadowtls_enabled', _('启用 ShadowTLS'));
+	o.depends('type', 'shadowsocks');
+	o.rmempty = false;
+	o.load = function(section_id) {
+		let enabled = uci.get(data[0], section_id, 'shadowtls_enabled');
+		if (enabled != null)
+			return enabled;
+
+		return uci.get(data[0], section_id, 'shadowtls_address') ? '1' : '0';
+	}
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'shadowtls_address', _('ShadowTLS 地址'));
+	o.datatype = 'host';
+	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
+	o.validate = function(section_id, value) {
+		if (section_id) {
+			let type = this.section.formvalue(section_id, 'type');
+			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
+			if (type === 'shadowsocks' && enabled === '1' && !value)
+				return _('不能为空');
+		}
+
+		return true;
+	}
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'shadowtls_port', _('ShadowTLS 端口'));
+	o.datatype = 'port';
+	o.placeholder = '443';
+	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
+	o.validate = function(section_id, value) {
+		if (section_id) {
+			let type = this.section.formvalue(section_id, 'type');
+			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
+			if (type === 'shadowsocks' && enabled === '1' && !value)
+				return _('不能为空');
+		}
+
+		return true;
+	}
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'shadowtls_password', _('ShadowTLS 密码'));
+	o.password = true;
+	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
+	o.validate = function(section_id, value) {
+		if (section_id) {
+			let type = this.section.formvalue(section_id, 'type');
+			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
+			if (type === 'shadowsocks' && enabled === '1' && !value)
+				return _('不能为空');
+		}
+
+		return true;
+	}
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'shadowtls_sni', _('ShadowTLS 服务器名称'));
+	o.datatype = 'hostname';
+	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
 	o.modalonly = true;
 	/* Shadowsocks config end */
 
 	/* ShadowTLS config */
-	o = s.option(form.ListValue, 'shadowtls_version', _('ShadowTLS version'));
-	o.value('1', _('v1'));
-	o.value('2', _('v2'));
-	o.value('3', _('v3'));
+	o = s.option(form.ListValue, 'shadowtls_version', _('ShadowTLS 版本'));
+	o.value('1', _('版本 1'));
+	o.value('2', _('版本 2'));
+	o.value('3', _('版本 3'));
 	o.default = '1';
 	o.depends('type', 'shadowtls');
-	o.depends({'type': 'shadowsocks', 'shadowtls_address': /[\s\S]/});
+	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
 	o.rmempty = false;
 	o.modalonly = true;
 
