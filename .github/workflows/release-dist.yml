@@ -1,0 +1,67 @@
+name: Release custom APK
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'custom-*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source tree
+        uses: actions/checkout@v6
+
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          apk_file="$(ls dist/luci-app-homeproxy_*.apk | head -n 1)"
+          cp "$apk_file" luci-app-homeproxy-custom_all.apk
+          sha256sum "$apk_file" luci-app-homeproxy-custom_all.apk > SHA256SUMS.txt
+          cat > RELEASE_NOTES.md <<EOF
+          ## HomeProxy Custom
+
+          基于 https://github.com/immortalwrt/homeproxy 的自定义版本。
+
+          ### 优化内容
+
+          - 支持 SS2022 + ShadowTLS 节点
+          - 路由节点支持 Selector
+          - 路由规则可直接选择具体节点
+          - 默认开启 Clash API
+          - HomeProxy 页面增加 MetaCubeXD 打开面板入口
+
+          ### 一键安装
+
+          \`\`\`sh
+          wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
+          \`\`\`
+
+          ### 手动安装
+
+          \`\`\`sh
+          wget -O /tmp/luci-app-homeproxy-custom.apk https://github.com/itv3/homeproxy/releases/latest/download/luci-app-homeproxy-custom_all.apk
+          apk add --allow-untrusted /tmp/luci-app-homeproxy-custom.apk
+          rm -f /tmp/luci-app-homeproxy-custom.apk
+          \`\`\`
+          EOF
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          title="HomeProxy Custom ${tag#custom-}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/luci-app-homeproxy_*.apk luci-app-homeproxy-custom_all.apk SHA256SUMS.txt --clobber
+          else
+            gh release create "$tag" dist/luci-app-homeproxy_*.apk luci-app-homeproxy-custom_all.apk SHA256SUMS.txt \
+              --title "$title" \
+              --notes-file RELEASE_NOTES.md \
+              --latest
+          fi
