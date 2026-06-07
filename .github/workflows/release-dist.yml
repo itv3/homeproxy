@@ -21,7 +21,7 @@ jobs:
           set -euo pipefail
           apk_file="$(ls dist/luci-app-homeproxy_*.apk | head -n 1)"
           cp "$apk_file" luci-app-homeproxy-custom_all.apk
-          sha256sum "$apk_file" luci-app-homeproxy-custom_all.apk > SHA256SUMS.txt
+          sha256sum luci-app-homeproxy-custom_all.apk > SHA256SUMS.txt
           cat > RELEASE_NOTES.md <<EOF
           ## HomeProxy Custom
 
@@ -58,9 +58,9 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           title="HomeProxy Custom ${tag#custom-}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/luci-app-homeproxy_*.apk luci-app-homeproxy-custom_all.apk SHA256SUMS.txt --clobber
+            gh release upload "$tag" luci-app-homeproxy-custom_all.apk SHA256SUMS.txt --clobber
           else
-            gh release create "$tag" dist/luci-app-homeproxy_*.apk luci-app-homeproxy-custom_all.apk SHA256SUMS.txt \
+            gh release create "$tag" luci-app-homeproxy-custom_all.apk SHA256SUMS.txt \
               --title "$title" \
               --notes-file RELEASE_NOTES.md \
               --latest
