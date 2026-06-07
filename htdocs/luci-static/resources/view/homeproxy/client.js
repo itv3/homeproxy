@@ -59,6 +59,26 @@ function renderStatus(isRunning, version) {
 	return renderHTML;
 }
 
+function parseController(value) {
+	let result = {
+		hostname: '',
+		port: '',
+		https: false
+	};
+
+	if (!value)
+		return result;
+
+	try {
+		let url = new URL(value.match(/^https?:\/\//) ? value : 'http://' + value);
+		result.hostname = url.hostname;
+		result.port = url.port;
+		result.https = url.protocol === 'https:';
+	} catch(e) { }
+
+	return result;
+}
+
 let stubValidator = {
 	factory: validation,
 	apply(type, value, args) {
@@ -97,6 +117,38 @@ return view.extend({
 				String.format('[%s] %s', res.type, res.label || ((stubValidator.apply('ip6addr', nodeaddr) ?
 					String.format('[%s]', nodeaddr) : nodeaddr) + ':' + nodeport));
 		});
+
+		let renderMetacubexdLink = function(o) {
+			let enabled = uci.get(data[0], 'config', 'clash_api_enabled') === '1',
+			    controller = parseController(uci.get(data[0], 'config', 'clash_api_external_controller') || '192.168.9.1:9090'),
+			    secret = uci.get(data[0], 'config', 'clash_api_secret') || '',
+			    dashboard = uci.get(data[0], 'config', 'metacubexd_url') || 'https://metacubexd.pages.dev';
+
+			if (!enabled) {
+				o.default = E('em', {}, _('Clash API is disabled.'));
+				return;
+			}
+
+			if (!controller.hostname) {
+				o.default = E('em', {}, _('Invalid Clash API controller address.'));
+				return;
+			}
+
+			let url = new URL('/setup', dashboard.replace(/\/+$/, '') + '/');
+			url.searchParams.set('hostname', controller.hostname);
+			if (controller.port)
+				url.searchParams.set('port', controller.port);
+			url.searchParams.set(controller.https ? 'https' : 'http', '1');
+			if (secret)
+				url.searchParams.set('secret', secret);
+
+			o.default = E('a', {
+				'class': 'btn cbi-button cbi-button-action',
+				'href': url.toString(),
+				'target': '_blank',
+				'rel': 'noreferrer noopener'
+			}, [ _('Open MetaCubeXD') ]);
+		};
 
 		m = new form.Map('homeproxy', _('HomeProxy'),
 			_('The modern ImmortalWrt proxy platform for ARM64/AMD64.'));
@@ -298,6 +350,64 @@ return view.extend({
 		o.default = o.enabled;
 		o.rmempty = false;
 
+		o = s.taboption('routing', form.Flag, 'clash_api_enabled', _('Clash API'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.taboption('routing', form.Value, 'clash_api_external_controller', _('Clash API controller'));
+		o.placeholder = '192.168.9.1:9090';
+		o.depends('clash_api_enabled', '1');
+		o.validate = function(section_id, value) {
+			if (section_id && value && !parseController(value).hostname)
+				return _('Expecting: %s').format(_('valid address'));
+
+			return true;
+		}
+
+		o = s.taboption('routing', form.Value, 'clash_api_secret', _('Clash API secret'));
+		o.password = true;
+		o.depends('clash_api_enabled', '1');
+
+		o = s.taboption('routing', form.ListValue, 'clash_api_default_mode', _('Clash API mode'));
+		o.value('Rule');
+		o.value('Global');
+		o.value('Direct');
+		o.default = 'Rule';
+		o.depends('clash_api_enabled', '1');
+
+		o = s.taboption('routing', hp.CBIStaticList, 'clash_api_allow_origin', _('Clash API allowed origins'));
+		o.value('https://metacubex.github.io');
+		o.value('https://metacubexd.pages.dev');
+		o.value('http://d.metacubex.one');
+		o.value('https://yacd.metacubex.one');
+		o.depends('clash_api_enabled', '1');
+
+		o = s.taboption('routing', form.Flag, 'clash_api_allow_private_network', _('Allow private network'));
+		o.default = o.enabled;
+		o.rmempty = false;
+		o.depends('clash_api_enabled', '1');
+
+		o = s.taboption('routing', form.Value, 'metacubexd_url', _('MetaCubeXD URL'));
+		o.placeholder = 'https://metacubexd.pages.dev';
+		o.depends('clash_api_enabled', '1');
+		o.validate = function(section_id, value) {
+			if (section_id && value) {
+				try {
+					let url = new URL(value);
+					if (!url.hostname)
+						return _('Expecting: %s').format(_('valid URL'));
+				} catch(e) {
+					return _('Expecting: %s').format(_('valid URL'));
+				}
+			}
+
+			return true;
+		}
+
+		o = s.taboption('routing', form.DummyValue, '_metacubexd_link', _('MetaCubeXD'));
+		o.depends('clash_api_enabled', '1');
+		o.cfgvalue = L.bind(renderMetacubexdLink, this, o);
+
 		/* Custom routing settings start */
 		/* Routing settings start */
 		o = s.taboption('routing', form.SectionValue, '_routing', form.NamedSection, 'routing', 'homeproxy');
@@ -419,6 +529,7 @@ return view.extend({
 		so = ss.option(form.ListValue, 'node', _('Node'),
 			_('Outbound node'));
 		so.value('urltest', _('URLTest'));
+		so.value('selector', _('Selector'));
 		for (let i in proxy_nodes)
 			so.value(i, proxy_nodes[i]);
 		so.validate = L.bind(hp.validateUniqueValue, this, data[0], 'routing_node', 'node');
@@ -440,21 +551,21 @@ return view.extend({
 
 			return this.super('load', section_id);
 		}
-		so.depends({'node': 'urltest', '!reverse': true});
+		so.depends({'node': /^((?!(urltest|selector)$).)+$/});
 		so.modalonly = true;
 
 		so = ss.option(form.ListValue, 'domain_strategy', _('Domain strategy'),
 			_('The domain strategy for resolving the domain name in the address.'));
 		for (let i in hp.dns_strategy)
 			so.value(i, hp.dns_strategy[i]);
-		so.depends({'node': 'urltest', '!reverse': true});
+		so.depends({'node': /^((?!(urltest|selector)$).)+$/});
 		so.modalonly = true;
 
 		so = ss.option(widgets.DeviceSelect, 'bind_interface', _('Bind interface'),
 			_('The network interface to bind to.'));
 		so.multiple = false;
 		so.noaliases = true;
-		so.depends({'outbound': '', 'node': /^((?!urltest$).)+$/});
+		so.depends({'outbound': '', 'node': /^((?!(urltest|selector)$).)+$/});
 		so.modalonly = true;
 
 		so = ss.option(form.ListValue, 'outbound', _('Outbound'),
@@ -482,6 +593,8 @@ return view.extend({
 							conflict = true;
 						else if (res.node === 'urltest' && res.urltest_nodes?.includes(node) && res['.name'] == value)
 							conflict = true;
+						else if (res.node === 'selector' && res.selector_nodes?.includes(node) && res['.name'] == value)
+							conflict = true;
 					}
 				});
 				if (conflict)
@@ -490,7 +603,7 @@ return view.extend({
 
 			return true;
 		}
-		so.depends({'node': 'urltest', '!reverse': true});
+		so.depends({'node': /^((?!(urltest|selector)$).)+$/});
 		so.editable = true;
 
 		so = ss.option(hp.CBIStaticList, 'urltest_nodes', _('URLTest nodes'),
@@ -505,6 +618,39 @@ return view.extend({
 
 			return true;
 		}
+		so.modalonly = true;
+
+		so = ss.option(hp.CBIStaticList, 'selector_nodes', _('Selector nodes'),
+			_('List of manually selectable nodes.'));
+		for (let i in proxy_nodes)
+			so.value(i, proxy_nodes[i]);
+		so.depends('node', 'selector');
+		so.validate = function(section_id) {
+			let value = this.section.formvalue(section_id, 'selector_nodes');
+			if (section_id && !value.length)
+				return _('Expecting: %s').format(_('non-empty value'));
+
+			return true;
+		}
+		so.modalonly = true;
+
+		so = ss.option(form.ListValue, 'selector_default', _('Default selector node'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('', _('Default'));
+			for (let i in proxy_nodes)
+				this.value('cfg-' + i + '-out', proxy_nodes[i]);
+
+			return this.super('load', section_id);
+		}
+		so.depends('node', 'selector');
+		so.modalonly = true;
+
+		so = ss.option(form.Flag, 'selector_interrupt_exist_connections', _('Interrupt existing connections'),
+			_('Interrupt existing connections when the selected outbound has changed.'));
+		so.depends('node', 'selector');
 		so.modalonly = true;
 
 		so = ss.option(form.Value, 'urltest_url', _('Test URL'),

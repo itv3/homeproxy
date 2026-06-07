@@ -493,6 +493,38 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	}
 	o.modalonly = true;
 
+	o = s.option(form.Value, 'shadowtls_address', _('ShadowTLS address'),
+		_('Enable ShadowTLS as the detour outbound for this Shadowsocks node.'));
+	o.datatype = 'host';
+	o.depends('type', 'shadowsocks');
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'shadowtls_port', _('ShadowTLS port'));
+	o.datatype = 'port';
+	o.placeholder = '443';
+	o.depends({'type': 'shadowsocks', 'shadowtls_address': /[\s\S]/});
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'shadowtls_password', _('ShadowTLS password'));
+	o.password = true;
+	o.depends({'type': 'shadowsocks', 'shadowtls_address': /[\s\S]/});
+	o.validate = function(section_id, value) {
+		if (section_id) {
+			let type = this.section.formvalue(section_id, 'type');
+			let address = this.section.formvalue(section_id, 'shadowtls_address');
+			if (type === 'shadowsocks' && address && !value)
+				return _('Expecting: %s').format(_('non-empty value'));
+		}
+
+		return true;
+	}
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'shadowtls_sni', _('ShadowTLS SNI'));
+	o.datatype = 'hostname';
+	o.depends({'type': 'shadowsocks', 'shadowtls_address': /[\s\S]/});
+	o.modalonly = true;
+
 	/* Direct config */
 	o = s.option(form.ListValue, 'proxy_protocol', _('Proxy protocol'),
 		_('Write proxy protocol in the connection header.'));
@@ -647,6 +679,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.value('3', _('v3'));
 	o.default = '1';
 	o.depends('type', 'shadowtls');
+	o.depends({'type': 'shadowsocks', 'shadowtls_address': /[\s\S]/});
 	o.rmempty = false;
 	o.modalonly = true;
 
