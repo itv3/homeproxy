@@ -79,6 +79,17 @@ function parseController(value) {
 	return result;
 }
 
+function deriveProxyController(value) {
+	let controller = parseController(value || '192.168.9.1:9090');
+
+	if (!controller.hostname)
+		return '192.168.9.1:9091';
+
+	let hostname = controller.hostname.replace(/^\[(.*)\]$/, '$1');
+
+	return String.format('%s:9091', hostname.includes(':') ? '[' + hostname + ']' : hostname);
+}
+
 let stubValidator = {
 	factory: validation,
 	apply(type, value, args) {
@@ -134,7 +145,9 @@ return view.extend({
 
 		let dashboardSetupUrl = function() {
 			let enabled = uci.get(data[0], 'config', 'clash_api_enabled') === '1',
-			    controller = parseController(uci.get(data[0], 'config', 'clash_api_external_controller') || '192.168.9.1:9090'),
+			    target = uci.get(data[0], 'config', 'clash_api_external_controller') || '192.168.9.1:9090',
+			    proxy = uci.get(data[0], 'config', 'clash_api_proxy_external_controller') || deriveProxyController(target),
+			    controller = parseController(proxy),
 			    secret = uci.get(data[0], 'config', 'clash_api_secret') || '';
 
 			if (!enabled || !controller.hostname)

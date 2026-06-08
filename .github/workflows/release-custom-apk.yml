@@ -84,6 +84,7 @@ jobs:
           ### 优化内容
 
           - 添加配置导入导出功能，支持 HomeProxy 源配置备份 / 恢复
+          - 添加 Clash API 面板代理，隐藏 MetaCubeXD 中的 ShadowTLS 中间层节点
 
           ### 一键安装
 

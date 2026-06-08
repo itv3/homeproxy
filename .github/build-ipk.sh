@@ -104,7 +104,7 @@ default_prerm' > "$TEMP_DIR/pre-deinstall"
 		--script "post-install:$TEMP_DIR/post-install" \
 		--script "post-upgrade:$TEMP_DIR/post-upgrade" \
 		--script "pre-deinstall:$TEMP_DIR/pre-deinstall" \
-		--info "depends:libc sing-box firewall4 kmod-nft-tproxy ucode-mod-digest" \
+		--info "depends:libc sing-box firewall4 kmod-nft-tproxy ucode-mod-digest ucode-mod-socket ucode-mod-uloop" \
 		--files "$TEMP_PKG_DIR" \
 		--output "$TEMP_DIR/${PKG_NAME}_${PKG_VERSION}.apk"
 
@@ -115,7 +115,7 @@ else
 	cat > "$TEMP_PKG_DIR/CONTROL/control" <<-EOF
 		Package: $PKG_NAME
 		Version: $PKG_VERSION
-		Depends: libc, sing-box, firewall4, kmod-nft-tproxy, ucode-mod-digest
+		Depends: libc, sing-box, firewall4, kmod-nft-tproxy, ucode-mod-digest, ucode-mod-socket, ucode-mod-uloop
 		Source: https://github.com/immortalwrt/homeproxy
 		SourceName: $PKG_NAME
 		Section: luci
