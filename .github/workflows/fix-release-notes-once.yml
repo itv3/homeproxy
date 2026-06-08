@@ -1,0 +1,45 @@
+name: Fix current release notes once
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - custom/homeproxy-enhancements
+
+permissions:
+  contents: write
+
+jobs:
+  fix-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update current release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: custom-20260608-73b0361
+        run: |
+          set -euo pipefail
+          cat > RELEASE_NOTES.md <<'EOF'
+          ## HomeProxy Custom
+
+          基于 https://github.com/immortalwrt/homeproxy 的自定义版本。
+
+          ### 优化内容
+
+          - 添加配置导入导出功能，支持 HomeProxy 源配置备份 / 恢复
+
+          ### 一键安装
+
+          ```sh
+          wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
+          ```
+
+          ### 手动安装
+
+          ```sh
+          wget -O /tmp/luci-app-homeproxy-custom.apk https://github.com/itv3/homeproxy/releases/latest/download/luci-app-homeproxy-custom_all.apk
+          apk add --allow-untrusted /tmp/luci-app-homeproxy-custom.apk
+          rm -f /tmp/luci-app-homeproxy-custom.apk
+          ```
+          EOF
+          gh release edit "$TAG" --notes-file RELEASE_NOTES.md

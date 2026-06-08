@@ -83,11 +83,6 @@ jobs:
 
           ### 优化内容
 
-          - 支持 SS2022 + ShadowTLS 节点
-          - 路由节点支持 Selector
-          - 路由规则可直接选择具体节点
-          - 默认开启 Clash API
-          - HomeProxy 页面增加 MetaCubeXD 打开面板入口
           - 添加配置导入导出功能，支持 HomeProxy 源配置备份 / 恢复
 
           ### 一键安装
