@@ -42,4 +42,8 @@ jobs:
           rm -f /tmp/luci-app-homeproxy-custom.apk
           ```
           EOF
-          gh release edit "$TAG" --notes-file RELEASE_NOTES.md
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.id')"
+          gh api \
+            --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            --field "body=$(cat RELEASE_NOTES.md)"
