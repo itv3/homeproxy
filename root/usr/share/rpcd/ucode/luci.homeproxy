@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { access, error, lstat, popen, readfile, writefile } from 'fs';
+import { access, error, lstat, popen, readfile, stat, writefile } from 'fs';
 
 /* Kanged from ucode/luci */
 function shellquote(s) {
@@ -20,6 +20,133 @@ function hasKernelModule(kmod) {
 
 const HP_DIR = '/etc/homeproxy';
 const RUN_DIR = '/var/run/homeproxy';
+const BACKUP_ARCHIVE = '/tmp/homeproxy-backup.tar.gz';
+const RESTORE_ARCHIVE = '/tmp/homeproxy-restore.tar.gz';
+const ROLLBACK_ARCHIVE = '/tmp/homeproxy-rollback.tar.gz';
+const BACKUP_LIST = '/tmp/homeproxy-backup.list';
+
+function commandOutput(command) {
+	const fd = popen(`${command} 2>&1`);
+	let out = '';
+
+	if (fd) {
+		for (let line = fd.read('line'); length(line); line = fd.read('line'))
+			out += line;
+
+		fd.close();
+	}
+
+	return out;
+}
+
+function archiveMemberPath(line) {
+	line = trim(line || '');
+	if (!line)
+		return null;
+
+	let matchPath = match(line, /^[^ \t]+[ \t]+[^ \t]+[ \t]+[^ \t]+[ \t]+[^ \t]+[ \t]+[^ \t]+[ \t]+(.+)$/);
+	let path = matchPath ? matchPath[1] : line;
+
+	path = replace(path, /^\.\//, '');
+	path = replace(path, /^\/+/, '');
+
+	return path;
+}
+
+function allowedBackupPath(path) {
+	if (!path || match(path, /(^|\/)\.\.(\/|$)/) || match(path, /^etc\/homeproxy\/certs\/.*\//))
+		return false;
+
+	return (
+		path === 'etc/config/homeproxy' ||
+		path === 'etc/homeproxy/resources/direct_list.txt' ||
+		path === 'etc/homeproxy/resources/proxy_list.txt' ||
+		match(path, /^etc\/homeproxy\/certs\/[^\/]+$/)
+	);
+}
+
+function validateBackupArchive(path) {
+	const filestat = lstat(path);
+
+	if (!filestat || filestat.type !== 'file' || filestat.size <= 0)
+		return { valid: false, error: '备份文件不存在或内容为空' };
+
+	const fd = popen(`/bin/tar -tvzf ${shellquote(path)} 2>&1`);
+	let files = [], errors = [];
+
+	if (!fd)
+		return { valid: false, error: '无法运行 tar 检查备份文件' };
+
+	for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+		let path = archiveMemberPath(line);
+		if (!path)
+			continue;
+
+		let mode = match(line, /^([^ \t]+)/);
+		if (mode && substr(mode[1], 0, 1) !== '-') {
+			errors = [ ...errors, `备份文件内包含不支持的条目类型: ${path}` ];
+			continue;
+		}
+
+		if (!allowedBackupPath(path))
+			errors = [ ...errors, `备份文件内包含不支持的路径: ${path}` ];
+		else
+			files = [ ...files, path ];
+	}
+
+	fd.close();
+
+	if (length(errors))
+		return { valid: false, error: join('\n', errors), files };
+
+	if (index(files, 'etc/config/homeproxy') === -1)
+		return { valid: false, error: '备份文件缺少 etc/config/homeproxy', files };
+
+	return { valid: true, files };
+}
+
+function createBackupArchive(path) {
+	let files = [];
+
+	if (stat('/etc/config/homeproxy')?.type === 'file')
+		files = [ ...files, 'etc/config/homeproxy' ];
+
+	if (stat(`${HP_DIR}/resources/direct_list.txt`)?.type === 'file')
+		files = [ ...files, 'etc/homeproxy/resources/direct_list.txt' ];
+
+	if (stat(`${HP_DIR}/resources/proxy_list.txt`)?.type === 'file')
+		files = [ ...files, 'etc/homeproxy/resources/proxy_list.txt' ];
+
+	const certs = commandOutput(`[ -d /etc/homeproxy/certs ] && find /etc/homeproxy/certs -maxdepth 1 -type f -print || true`);
+	for (let file in split(trim(certs), /\n/)) {
+		file = archiveMemberPath(file);
+		if (allowedBackupPath(file))
+			files = [ ...files, file ];
+	}
+
+	if (!length(files))
+		return { result: false, error: '没有可备份的 HomeProxy 文件' };
+
+	writefile(BACKUP_LIST, join('\n', files) + '\n');
+	system(`rm -f ${shellquote(path)}`);
+
+	let exit_code = system(`cd / && /bin/tar -czf ${shellquote(path)} -T ${shellquote(BACKUP_LIST)}`);
+	system(`rm -f ${shellquote(BACKUP_LIST)}`);
+
+	if (exit_code !== 0)
+		return { result: false, error: `tar 打包失败，退出码 ${exit_code}` };
+
+	const archive = lstat(path);
+	if (!archive || archive.type !== 'file' || archive.size <= 0)
+		return { result: false, error: '备份文件未成功生成' };
+
+	return {
+		result: true,
+		path,
+		size: archive.size,
+		files
+	};
+}
 
 const methods = {
 	acllist_read: {
@@ -151,6 +278,46 @@ const methods = {
 			if (filestat)
 				writefile(`${RUN_DIR}/${req.args?.type}.log`, '');
 			return { result: true };
+		}
+	},
+
+	backup_create: {
+		call: function() {
+			return createBackupArchive(BACKUP_ARCHIVE);
+		}
+	},
+	backup_validate: {
+		call: function() {
+			return validateBackupArchive(RESTORE_ARCHIVE);
+		}
+	},
+	backup_restore: {
+		call: function() {
+			const check = validateBackupArchive(RESTORE_ARCHIVE);
+
+			if (!check.valid)
+				return { result: false, error: check.error, files: check.files };
+
+			const rollback = createBackupArchive(ROLLBACK_ARCHIVE);
+			if (!rollback.result)
+				return { result: false, error: `创建回滚包失败: ${rollback.error}` };
+
+			system(`rm -rf /etc/homeproxy/certs && mkdir -p /etc/homeproxy/resources /etc/homeproxy/certs`);
+			let exit_code = system(`cd / && /bin/tar -xzf ${shellquote(RESTORE_ARCHIVE)}`);
+
+			if (exit_code !== 0)
+				return { result: false, error: `恢复失败，退出码 ${exit_code}`, rollback: ROLLBACK_ARCHIVE };
+
+			system('/sbin/uci commit homeproxy');
+			system(`rm -f ${shellquote(RESTORE_ARCHIVE)} /tmp/luci-indexcache.*`);
+			system('rm -rf /tmp/luci-modulecache/ 2>/dev/null');
+			system('/etc/init.d/homeproxy restart >/dev/null 2>&1');
+
+			return {
+				result: true,
+				files: check.files,
+				rollback: ROLLBACK_ARCHIVE
+			};
 		}
 	},
 

@@ -88,6 +88,7 @@ jobs:
           - 路由规则可直接选择具体节点
           - 默认开启 Clash API
           - HomeProxy 页面增加 MetaCubeXD 打开面板入口
+          - HomeProxy 页面增加源配置备份 / 恢复入口
 
           ### 一键安装
 

@@ -62,13 +62,20 @@
    - 默认跳转到 <https://metacubexd.pages.dev/#/overview>。
    - 跳转时自动带入 Clash API 的 host、port、secret 等参数。
 
-6. 自定义 Release 自动发布
+6. 增加 HomeProxy 配置备份 / 恢复
+
+   - HomeProxy 菜单下新增 `备份 / 恢复` 页面。
+   - 导出 `/etc/config/homeproxy`、`/etc/homeproxy/resources/direct_list.txt`、`/etc/homeproxy/resources/proxy_list.txt`。
+   - 同时导出用户上传到 `/etc/homeproxy/certs/` 的证书和私钥文件。
+   - 导入时只接受上述 HomeProxy 源配置路径，恢复前会生成 `/tmp/homeproxy-rollback.tar.gz` 便于回滚。
+
+7. 自定义 Release 自动发布
 
    - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
    - 打 `custom-*` tag 后会现场构建 APK，并自动发布到 GitHub Releases。
    - 一键安装和手动安装都只使用 GitHub Releases 的 latest APK。
 
-7. 定时检查上游更新
+8. 定时检查上游更新
 
    - GitHub Actions 每天检查一次 `immortalwrt/homeproxy:master`。
    - 如果上游有新提交，会创建或更新带 `upstream-update` 标签的 Issue。
@@ -117,6 +124,7 @@ sing-box check -c /var/run/homeproxy/sing-box-c.json
 /etc/init.d/homeproxy status
 sleep 2
 ubus call luci.homeproxy connection_check '{"site":"google"}'
+ubus call luci.homeproxy backup_create
 ```
 
 ## 给开发者 / AI 的维护说明
@@ -126,9 +134,11 @@ ubus call luci.homeproxy connection_check '{"site":"google"}'
 ```text
 htdocs/luci-static/resources/view/homeproxy/client.js   # 客户端页面、路由节点、路由规则、打开面板按钮
 htdocs/luci-static/resources/view/homeproxy/node.js     # 节点页面、SS2022 + ShadowTLS 表单
+htdocs/luci-static/resources/view/homeproxy/backup.js   # HomeProxy 源配置备份 / 恢复页面
 root/etc/homeproxy/scripts/generate_client.uc           # 生成 sing-box 客户端配置
 root/etc/homeproxy/scripts/migrate_config.uc            # 旧配置迁移和默认配置补齐
 root/etc/config/homeproxy                               # 新安装时的默认配置
+root/usr/share/rpcd/ucode/luci.homeproxy                # HomeProxy RPC，包括备份 / 恢复
 .github/build-ipk.sh                                    # APK/IPK 打包脚本
 .github/workflows/build-ipk.yml                        # push / PR 后自动构建 APK/IPK artifact
 .github/workflows/release-custom-apk.yml               # tag 后现场构建 APK 并发布 GitHub Release
@@ -210,6 +220,7 @@ sing-box check -c /var/run/homeproxy/sing-box-c.json
 /etc/init.d/homeproxy status
 sleep 2
 ubus call luci.homeproxy connection_check '{"site":"google"}'
+ubus call luci.homeproxy backup_create
 ```
 
 ## HomeProxy 上游更新后怎么办
