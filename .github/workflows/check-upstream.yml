@@ -59,15 +59,21 @@ jobs:
         if: steps.compare.outputs.upstream_ahead != '0'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           UPSTREAM_AHEAD: ${{ steps.compare.outputs.upstream_ahead }}
           UPSTREAM_SHA: ${{ steps.compare.outputs.upstream_sha }}
           CUSTOM_SHA: ${{ steps.compare.outputs.custom_sha }}
         run: |
           set -euo pipefail
 
-          gh label create "${ISSUE_LABEL}" \
+          if ! gh label create "${ISSUE_LABEL}" \
             --description "Upstream HomeProxy has commits not merged into the custom branch" \
-            --color "fbca04" >/dev/null 2>&1 || true
+            --color "fbca04" 2>label-create-error.txt; then
+            if ! grep -qi "already exists" label-create-error.txt; then
+              cat label-create-error.txt >&2
+              exit 1
+            fi
+          fi
 
           issue_number="$(gh issue list --state open --label "${ISSUE_LABEL}" --json number --jq '.[0].number // ""' 2>/dev/null || true)"
           body_file="$(mktemp)"
@@ -103,6 +109,7 @@ jobs:
         if: steps.compare.outputs.upstream_ahead == '0'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
