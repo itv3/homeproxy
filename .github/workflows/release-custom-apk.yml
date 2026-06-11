@@ -101,7 +101,7 @@ jobs:
             --output Packages.adb \
             "$versioned_app_apk"
 
-          echo "ndx https://github.com/itv3/homeproxy/releases/download/${GITHUB_REF_NAME}/Packages.adb" > homeproxy-custom.list
+          echo "https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb" > homeproxy-custom.list
 
           sha256sum \
             luci-app-homeproxy-custom_all.apk \
@@ -128,13 +128,19 @@ jobs:
 
           ### WebUI 安装
 
-          1. 在「软件包仓库公钥」里添加 `homeproxy-custom.pem`。
+          1. 下载 `homeproxy-custom.pem`，在「软件包仓库公钥」里拖入文件添加。
           2. 如已安装官方 `luci-i18n-homeproxy-zh-cn`，先删除该翻译包。
           3. 在「软件包」里上传 `luci-app-homeproxy-custom_all.apk` 安装 / 升级。
 
           ### 软件源
 
-          添加 `homeproxy-custom.list` 后，软件包管理器可直接安装 / 升级 `luci-app-homeproxy`。
+          在「软件包」->「配置 apk」-> `/etc/apk/repositories.d/customfeeds.list` 中追加：
+
+          ```text
+          https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb
+          ```
+
+          保存后更新列表，软件包管理器可直接安装 / 升级 `luci-app-homeproxy`。
           EOF
 
       - name: Publish GitHub release

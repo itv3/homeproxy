@@ -103,14 +103,27 @@ wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enha
 ### B. WebUI 安装 / 升级
 
 1. 打开 `系统 -> 管理权 -> 软件包仓库公钥`。
-2. 添加 latest release 中的 `homeproxy-custom.pem`。
+2. 下载 latest release 中的 `homeproxy-custom.pem`，把文件拖入公钥输入框添加。
 3. 如果已经安装官方 `luci-i18n-homeproxy-zh-cn`，先在软件包里删除该翻译包。
 4. 打开 `系统 -> 软件包`，上传 latest release 中的 `luci-app-homeproxy-custom_all.apk`。
 5. 确认安装 / 升级。
 
 `luci-app-homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。
 
-### C. 软件源安装 / 升级
+### C. WebUI 软件源安装 / 升级
+
+1. 先按上面的方式添加 `homeproxy-custom.pem` 公钥。
+2. 打开 `系统 -> 软件包 -> 配置 apk`。
+3. 在 `/etc/apk/repositories.d/customfeeds.list` 文本框中追加：
+
+```text
+https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb
+```
+
+4. 保存后点击 `更新列表`。
+5. 搜索并安装 / 升级 `luci-app-homeproxy`。
+
+### D. SSH 软件源安装 / 升级
 
 也可以手动添加软件源文件：
 
