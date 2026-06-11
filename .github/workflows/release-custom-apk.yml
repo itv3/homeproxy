@@ -76,7 +76,7 @@ jobs:
           apk_file="$(ls .github/luci-app-homeproxy_*.apk | head -n 1)"
           cp "$apk_file" luci-app-homeproxy-custom_all.apk
           sha256sum luci-app-homeproxy-custom_all.apk > SHA256SUMS.txt
-          cat > RELEASE_NOTES.md <<EOF
+          cat > RELEASE_NOTES.md <<'EOF'
           ## HomeProxy Custom
 
           基于 https://github.com/immortalwrt/homeproxy 的自定义版本。
