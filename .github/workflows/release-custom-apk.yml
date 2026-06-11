@@ -85,8 +85,12 @@ jobs:
           set -euo pipefail
           app_apk_file="$(ls .github/luci-app-homeproxy_*.apk | head -n 1)"
           i18n_apk_file="$(ls .github/luci-i18n-homeproxy-zh-cn_*.apk | head -n 1)"
-          app_version="$(basename "$app_apk_file" | sed -e 's/^luci-app-homeproxy_//' -e 's/_all\\.apk$//')"
-          i18n_version="$(basename "$i18n_apk_file" | sed -e 's/^luci-i18n-homeproxy-zh-cn_//' -e 's/_all\\.apk$//')"
+          app_apk_base="$(basename "$app_apk_file")"
+          i18n_apk_base="$(basename "$i18n_apk_file")"
+          app_version="${app_apk_base#luci-app-homeproxy_}"
+          app_version="${app_version%_all.apk}"
+          i18n_version="${i18n_apk_base#luci-i18n-homeproxy-zh-cn_}"
+          i18n_version="${i18n_version%_all.apk}"
           versioned_app_apk="luci-app-homeproxy-${app_version}.apk"
           versioned_i18n_apk="luci-i18n-homeproxy-zh-cn-${i18n_version}.apk"
           cp "$app_apk_file" "$versioned_app_apk"
@@ -97,7 +101,10 @@ jobs:
             echo "VERSIONED_I18N_APK=${versioned_i18n_apk}"
           } >> "$GITHUB_ENV"
 
-          apk mkndx \
+          mkdir -p apk-keys
+          cp homeproxy-custom.pem apk-keys/
+
+          apk --keys-dir "$PWD/apk-keys" mkndx \
             --sign-key homeproxy-custom.key \
             --description "HomeProxy Custom ${GITHUB_REF_NAME}" \
             --output Packages.adb \
