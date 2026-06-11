@@ -104,6 +104,8 @@ jobs:
           name: homeproxy-apk-packages
           path: .github/*.apk
           archive: false
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Publishing IPK files to GitHub Artifacts
         uses: actions/upload-artifact@v7
@@ -112,3 +114,5 @@ jobs:
           name: homeproxy-ipk-packages
           path: .github/*.ipk
           archive: false
+          include-hidden-files: true
+          if-no-files-found: error
