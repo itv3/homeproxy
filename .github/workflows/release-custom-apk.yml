@@ -93,7 +93,6 @@ jobs:
           versioned_app_apk="homeproxy-custom-${app_version}.apk"
           cp "$app_apk_file" "$versioned_app_apk"
           cp "$app_apk_file" homeproxy-custom_all.apk
-          cp "$app_apk_file" luci-app-homeproxy-custom_all.apk
           echo "VERSIONED_APP_APK=${versioned_app_apk}" >> "$GITHUB_ENV"
 
           mkdir -p apk-keys
@@ -109,7 +108,6 @@ jobs:
 
           sha256sum \
             homeproxy-custom_all.apk \
-            luci-app-homeproxy-custom_all.apk \
             "$versioned_app_apk" \
             Packages.adb \
             homeproxy-custom.pem \
@@ -164,7 +162,6 @@ jobs:
           title="HomeProxy Custom ${tag#custom-}"
           assets=(
             homeproxy-custom_all.apk
-            luci-app-homeproxy-custom_all.apk
             "${VERSIONED_APP_APK}"
             Packages.adb
             homeproxy-custom.pem

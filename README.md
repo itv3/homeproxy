@@ -116,7 +116,7 @@ wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enha
 3. 打开 `系统 -> 软件包`，上传 latest release 中的 `homeproxy-custom_all.apk`。
 4. 确认安装 / 升级。
 
-`homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。`luci-app-homeproxy-custom_all.apk` 只作为旧下载链接兼容保留。
+`homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。
 
 ### C. WebUI 软件源安装 / 升级
 
@@ -241,7 +241,6 @@ git push origin "$TAG"
 ```text
 homeproxy-custom_all.apk
 homeproxy-custom-<version>.apk
-luci-app-homeproxy-custom_all.apk
 Packages.adb
 homeproxy-custom.pem
 homeproxy-custom.list
