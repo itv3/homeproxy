@@ -132,9 +132,9 @@ jobs:
 
           ### 一键安装
 
-          \`\`\`sh
+          ```sh
           wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
-          \`\`\`
+          ```
 
           ### WebUI 安装
 
