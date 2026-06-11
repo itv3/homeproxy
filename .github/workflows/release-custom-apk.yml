@@ -88,12 +88,7 @@ jobs:
           set -euo pipefail
           app_apk_file="$(ls .github/homeproxy-custom_*.apk | head -n 1)"
           app_apk_base="$(basename "$app_apk_file")"
-          app_version="${app_apk_base#homeproxy-custom_}"
-          app_version="${app_version%_all.apk}"
-          versioned_app_apk="homeproxy-custom-${app_version}.apk"
-          cp "$app_apk_file" "$versioned_app_apk"
           cp "$app_apk_file" homeproxy-custom_all.apk
-          echo "VERSIONED_APP_APK=${versioned_app_apk}" >> "$GITHUB_ENV"
 
           mkdir -p apk-keys
           cp homeproxy-custom.pem apk-keys/
@@ -102,16 +97,7 @@ jobs:
             --sign-key homeproxy-custom.key \
             --description "HomeProxy Custom ${GITHUB_REF_NAME}" \
             --output Packages.adb \
-            "$versioned_app_apk"
-
-          echo "https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb" > homeproxy-custom.list
-
-          sha256sum \
-            homeproxy-custom_all.apk \
-            "$versioned_app_apk" \
-            Packages.adb \
-            homeproxy-custom.pem \
-            homeproxy-custom.list > SHA256SUMS.txt
+            "$app_apk_file"
           cat > RELEASE_NOTES.md <<'EOF'
           ## HomeProxy Custom
 
@@ -162,11 +148,8 @@ jobs:
           title="HomeProxy Custom ${tag#custom-}"
           assets=(
             homeproxy-custom_all.apk
-            "${VERSIONED_APP_APK}"
             Packages.adb
             homeproxy-custom.pem
-            homeproxy-custom.list
-            SHA256SUMS.txt
           )
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${assets[@]}" --clobber

@@ -95,7 +95,7 @@ wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enha
 脚本会自动完成：
 
 - 导入 `homeproxy-custom.pem` 软件包公钥。
-- 添加 `homeproxy-custom.list` 软件源。
+- 添加 HomeProxy Custom 软件源。
 - 执行 `apk update`。
 - 移除旧的独立翻译包 `luci-i18n-homeproxy-zh-cn`。
 - 安装 / 升级已内置简体中文翻译的 `homeproxy-custom`。
@@ -137,7 +137,7 @@ https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb
 
 ```sh
 wget -O /etc/apk/keys/homeproxy-custom.pem https://github.com/itv3/homeproxy/releases/latest/download/homeproxy-custom.pem
-wget -O /etc/apk/repositories.d/homeproxy-custom.list https://github.com/itv3/homeproxy/releases/latest/download/homeproxy-custom.list
+printf '%s\n' 'https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb' > /etc/apk/repositories.d/homeproxy-custom.list
 apk update
 apk del luci-i18n-homeproxy-zh-cn 2>/dev/null || true
 apk add homeproxy-custom
@@ -240,11 +240,8 @@ git push origin "$TAG"
 
 ```text
 homeproxy-custom_all.apk
-homeproxy-custom-<version>.apk
 Packages.adb
 homeproxy-custom.pem
-homeproxy-custom.list
-SHA256SUMS.txt
 ```
 
 发布后检查：

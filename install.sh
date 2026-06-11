@@ -10,7 +10,7 @@ URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 KEY_NAME="homeproxy-custom.pem"
 KEY_URL="https://github.com/$REPO/releases/latest/download/$KEY_NAME"
 REPO_LIST="/etc/apk/repositories.d/homeproxy-custom.list"
-REPO_LIST_URL="https://github.com/$REPO/releases/latest/download/homeproxy-custom.list"
+REPO_INDEX_URL="https://github.com/$REPO/releases/latest/download/Packages.adb"
 
 echo "HomeProxy Custom installer"
 
@@ -30,7 +30,7 @@ echo "install repository key"
 wget -O "/etc/apk/keys/$KEY_NAME" "$KEY_URL"
 
 echo "configure repository"
-wget -O "$REPO_LIST" "$REPO_LIST_URL"
+printf '%s\n' "$REPO_INDEX_URL" > "$REPO_LIST"
 
 echo "remove standalone translation package if installed"
 apk del luci-i18n-homeproxy-zh-cn 2>/dev/null || true
