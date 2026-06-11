@@ -95,22 +95,20 @@ jobs:
           pushd .github
           fakeroot bash build-ipk.sh apk "${{ github.event_name }}"
           fakeroot bash build-ipk.sh ipk "${{ github.event_name }}"
-          echo "APK_ASSET_NAME=$(ls *.apk)" >> $GITHUB_ENV
-          echo "IPK_ASSET_NAME=$(ls *.ipk)" >> $GITHUB_ENV
           popd
 
       - name: Publishing APK files to GitHub Artifacts
         uses: actions/upload-artifact@v7
         if: github.event_name != 'release'
         with:
-          name: ${{ env.APK_ASSET_NAME }}
-          path: .github/${{ env.APK_ASSET_NAME }}
+          name: homeproxy-apk-packages
+          path: .github/*.apk
           archive: false
 
       - name: Publishing IPK files to GitHub Artifacts
         uses: actions/upload-artifact@v7
         if: github.event_name != 'release'
         with:
-          name: ${{ env.IPK_ASSET_NAME }}
-          path: .github/${{ env.IPK_ASSET_NAME }}
+          name: homeproxy-ipk-packages
+          path: .github/*.ipk
           archive: false

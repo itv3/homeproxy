@@ -73,8 +73,8 @@
 7. 自定义 Release 自动发布
 
    - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
-   - 打 `custom-*` tag 后会现场构建 APK，并自动发布到 GitHub Releases。
-   - 一键安装和手动安装都只使用 GitHub Releases 的 latest APK。
+   - 打 `custom-*` tag 后会现场构建签名 APK、中文翻译包和 v3 软件源索引，并自动发布到 GitHub Releases。
+   - 一键安装会自动导入公钥、配置软件源并安装 / 升级 HomeProxy。
 
 8. 定时检查上游更新
 
@@ -92,14 +92,31 @@
 wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
 ```
 
-### B. 手动安装
+脚本会自动完成：
 
-下载最新发布版 APK：
+- 导入 `homeproxy-custom.pem` 软件包公钥。
+- 添加 `homeproxy-custom.list` 软件源。
+- 执行 `apk update`。
+- 安装 / 升级 `luci-app-homeproxy` 和 `luci-i18n-homeproxy-zh-cn`。
+
+### B. WebUI 安装 / 升级
+
+1. 打开 `系统 -> 管理权 -> 软件包仓库公钥`。
+2. 添加 latest release 中的 `homeproxy-custom.pem`。
+3. 打开 `系统 -> 软件包`，上传 latest release 中的 `luci-app-homeproxy-custom_all.apk`。
+4. 确认安装 / 升级。
+
+如果需要同步更新简体中文翻译，继续上传 latest release 中的 `luci-i18n-homeproxy-zh-cn-<version>.apk`，或直接使用一键安装 / 软件源方式。
+
+### C. 软件源安装 / 升级
+
+也可以手动添加软件源文件：
 
 ```sh
-wget -O /tmp/luci-app-homeproxy-custom.apk https://github.com/itv3/homeproxy/releases/latest/download/luci-app-homeproxy-custom_all.apk
-apk add --allow-untrusted /tmp/luci-app-homeproxy-custom.apk
-rm -f /tmp/luci-app-homeproxy-custom.apk
+wget -O /etc/apk/keys/homeproxy-custom.pem https://github.com/itv3/homeproxy/releases/latest/download/homeproxy-custom.pem
+wget -O /etc/apk/repositories.d/homeproxy-custom.list https://github.com/itv3/homeproxy/releases/latest/download/homeproxy-custom.list
+apk update
+apk add luci-app-homeproxy luci-i18n-homeproxy-zh-cn
 ```
 
 清理升级产生的 `.apk-new` 文件：
@@ -195,10 +212,15 @@ git tag -a "$TAG" -m "HomeProxy Custom ${TAG#custom-}"
 git push origin "$TAG"
 ```
 
-推送 tag 后，`Release custom APK` workflow 会现场构建 APK，创建 GitHub Release，并只上传两个文件：
+推送 tag 后，`Release custom APK` workflow 会现场构建签名 APK、中文翻译包和软件源索引，创建 GitHub Release，并上传：
 
 ```text
 luci-app-homeproxy-custom_all.apk
+luci-app-homeproxy-<version>.apk
+luci-i18n-homeproxy-zh-cn-<version>.apk
+Packages.adb
+homeproxy-custom.pem
+homeproxy-custom.list
 SHA256SUMS.txt
 ```
 
