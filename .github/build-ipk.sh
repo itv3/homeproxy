@@ -117,7 +117,7 @@ default_prerm' > "$TEMP_DIR/pre-deinstall"
 		--info "maintainer:Tianling Shen <cnsztl@immortalwrt.org>" \
 		--info "provides:" \
 		--info "replaces:luci-i18n-homeproxy-zh-cn" \
-		--info "replaces_priority:10" \
+		--info "replaces-priority:10" \
 		--script "post-install:$TEMP_DIR/post-install" \
 		--script "post-upgrade:$TEMP_DIR/post-upgrade" \
 		--script "pre-deinstall:$TEMP_DIR/pre-deinstall" \
