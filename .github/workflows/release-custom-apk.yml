@@ -81,10 +81,10 @@ jobs:
 
           基于 https://github.com/immortalwrt/homeproxy 的自定义版本。
 
-          ### 优化内容
+          ### 本版本变更
 
-          - 添加配置导入导出功能，支持 HomeProxy 源配置备份 / 恢复
-          - 添加 Clash API 面板代理，隐藏 MetaCubeXD 中的 ShadowTLS 中间层节点
+          - 合并上游修复：gRPC / HTTP2 transport 的 `idle_timeout`、`ping_timeout` 自动补时间单位，避免 sing-box 解析裸数字 duration 失败
+          - 修复上游更新检查 workflow，发现更新后可正确创建 / 关闭提醒 issue
 
           ### 一键安装
 
