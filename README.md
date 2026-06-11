@@ -84,7 +84,7 @@
 
 ## 安装和更新
 
-### A. 一键安装
+### A. 一键安装（推荐，尤其适合从原版 HomeProxy 迁移）
 
 在 OpenWrt / ImmortalWrt 路由器上执行：
 
@@ -109,27 +109,30 @@ wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enha
 - 已删除上游 `luci-app-homeproxy`：可以直接安装 `homeproxy-custom`。
 - 简体中文翻译已经内置，不需要再安装 `luci-i18n-homeproxy-zh-cn`。
 
-### B. WebUI 安装 / 升级
+### B. WebUI 软件源安装 / 升级（推荐）
 
-1. 打开 `系统 -> 管理权 -> 软件包仓库公钥`。
-2. 下载 latest release 中的 `homeproxy-custom.pem`，把文件拖入公钥输入框添加。
-3. 打开 `系统 -> 软件包`，上传 latest release 中的 `homeproxy-custom_all.apk`。
-4. 确认安装 / 升级。
-
-`homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。
-
-### C. WebUI 软件源安装 / 升级
-
-1. 先按上面的方式添加 `homeproxy-custom.pem` 公钥。
-2. 打开 `系统 -> 软件包 -> 配置 apk`。
-3. 在 `/etc/apk/repositories.d/customfeeds.list` 文本框中追加：
+1. 下载 latest release 中的 `homeproxy-custom.pem`。
+2. 进入 OpenWrt WebUI：`系统 -> 管理权 -> 软件包仓库公钥`，把 `homeproxy-custom.pem` 文件拖进输入框，添加软件包仓库公钥。
+3. 进入 `系统 -> 软件包 -> 配置 apk`，在 `/etc/apk/repositories.d/customfeeds.list` 输入框内追加：
 
 ```text
 https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb
 ```
 
-4. 保存后点击 `更新列表`。
-5. 搜索并安装 / 升级 `homeproxy-custom`。
+4. 回到 `系统 -> 软件包` 页面，点击 `更新列表`，搜索 `homeproxy-custom` 安装。
+5. 以后有新版本，更新列表后可在这个页面直接升级 `homeproxy-custom`。
+
+安装 `homeproxy-custom` 后，不需要再安装列表中的 `luci-app-homeproxy` 或 `luci-i18n-homeproxy-zh-cn`。
+
+### C. 手动上传 APK 安装 / 升级（备选）
+
+1. 先按上面的方式添加 `homeproxy-custom.pem` 公钥。
+2. 下载 latest release 中的 `homeproxy-custom_all.apk`。
+3. 进入 `系统 -> 软件包`，上传 `homeproxy-custom_all.apk` 安装 / 升级。
+
+`homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。
+
+如果从旧的 `luci-app-homeproxy` 迁移时遇到 `breaks: world[luci-app-homeproxy><...]` 报错，请使用一键安装命令完成迁移。
 
 ### D. SSH 软件源安装 / 升级
 
