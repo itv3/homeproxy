@@ -78,7 +78,7 @@ jobs:
           openssl pkey -in homeproxy-custom.key -pubout -out homeproxy-custom.pem
           pushd .github
           CUSTOM_PKG_NAME="homeproxy-custom" \
-            CUSTOM_PKG_DESCRIPTION="HomeProxy Custom - replaces original luci-app-homeproxy; zh-cn built in" \
+            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、配置导入导出、HomeProxy 源配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏  SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
             APK_SIGN_KEY="../homeproxy-custom.key" \
             fakeroot bash build-ipk.sh apk "snapshot"
           popd
