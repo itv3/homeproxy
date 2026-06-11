@@ -3,7 +3,8 @@
 set -eu
 
 REPO="itv3/homeproxy"
-ASSET="luci-app-homeproxy-custom_all.apk"
+PKG_NAME="homeproxy-custom"
+ASSET="homeproxy-custom_all.apk"
 TMP_APK="/tmp/$ASSET"
 URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 KEY_NAME="homeproxy-custom.pem"
@@ -37,7 +38,7 @@ apk del luci-i18n-homeproxy-zh-cn 2>/dev/null || true
 echo "update package index"
 if apk update; then
 	echo "install packages from repository"
-	apk add luci-app-homeproxy
+	apk add "$PKG_NAME"
 else
 	echo "warning: repository update failed, falling back to direct APK install" >&2
 	echo "download: $URL"
@@ -59,5 +60,5 @@ rm -rf /tmp/luci-modulecache/ 2>/dev/null || true
 /etc/init.d/homeproxy restart 2>/dev/null || true
 
 echo "installed:"
-apk list -I | grep luci-app-homeproxy || true
+apk list -I | grep -E '^(homeproxy-custom|luci-app-homeproxy)' || true
 echo "success"

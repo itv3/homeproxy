@@ -98,17 +98,25 @@ wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enha
 - 添加 `homeproxy-custom.list` 软件源。
 - 执行 `apk update`。
 - 移除旧的独立翻译包 `luci-i18n-homeproxy-zh-cn`。
-- 安装 / 升级已内置简体中文翻译的 `luci-app-homeproxy`。
+- 安装 / 升级已内置简体中文翻译的 `homeproxy-custom`。
+
+### 安装场景说明
+
+`homeproxy-custom` 是本仓库发布的自定义 HomeProxy 包，用于替换上游 `luci-app-homeproxy`，不是和原版并存的第二套 HomeProxy。
+
+- 从未安装过 HomeProxy：可以直接安装 `homeproxy-custom`。
+- 已安装上游 `luci-app-homeproxy`：安装 `homeproxy-custom` 会替换原版文件，原配置 `/etc/config/homeproxy` 会按包管理器规则保留。
+- 已删除上游 `luci-app-homeproxy`：可以直接安装 `homeproxy-custom`。
+- 简体中文翻译已经内置，不需要再安装 `luci-i18n-homeproxy-zh-cn`。
 
 ### B. WebUI 安装 / 升级
 
 1. 打开 `系统 -> 管理权 -> 软件包仓库公钥`。
 2. 下载 latest release 中的 `homeproxy-custom.pem`，把文件拖入公钥输入框添加。
-3. 如果已经安装官方 `luci-i18n-homeproxy-zh-cn`，先在软件包里删除该翻译包。
-4. 打开 `系统 -> 软件包`，上传 latest release 中的 `luci-app-homeproxy-custom_all.apk`。
-5. 确认安装 / 升级。
+3. 打开 `系统 -> 软件包`，上传 latest release 中的 `homeproxy-custom_all.apk`。
+4. 确认安装 / 升级。
 
-`luci-app-homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。
+`homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。`luci-app-homeproxy-custom_all.apk` 只作为旧下载链接兼容保留。
 
 ### C. WebUI 软件源安装 / 升级
 
@@ -121,7 +129,7 @@ https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb
 ```
 
 4. 保存后点击 `更新列表`。
-5. 搜索并安装 / 升级 `luci-app-homeproxy`。
+5. 搜索并安装 / 升级 `homeproxy-custom`。
 
 ### D. SSH 软件源安装 / 升级
 
@@ -132,7 +140,7 @@ wget -O /etc/apk/keys/homeproxy-custom.pem https://github.com/itv3/homeproxy/rel
 wget -O /etc/apk/repositories.d/homeproxy-custom.list https://github.com/itv3/homeproxy/releases/latest/download/homeproxy-custom.list
 apk update
 apk del luci-i18n-homeproxy-zh-cn 2>/dev/null || true
-apk add luci-app-homeproxy
+apk add homeproxy-custom
 ```
 
 清理升级产生的 `.apk-new` 文件：
@@ -152,7 +160,7 @@ find /etc/homeproxy /etc/config -name "*.apk-new" -exec rm -f {} \; 2>/dev/null 
 安装后可执行：
 
 ```sh
-apk list -I | grep luci-app-homeproxy
+apk list -I | grep -E '^(homeproxy-custom|luci-app-homeproxy)'
 ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
 sing-box check -c /var/run/homeproxy/sing-box-c.json
 /etc/init.d/homeproxy status
@@ -231,8 +239,9 @@ git push origin "$TAG"
 推送 tag 后，`Release custom APK` workflow 会现场构建内置中文翻译的签名 APK 和软件源索引，创建 GitHub Release，并上传：
 
 ```text
+homeproxy-custom_all.apk
+homeproxy-custom-<version>.apk
 luci-app-homeproxy-custom_all.apk
-luci-app-homeproxy-<version>.apk
 Packages.adb
 homeproxy-custom.pem
 homeproxy-custom.list
@@ -252,7 +261,7 @@ curl -fsSL https://api.github.com/repos/itv3/homeproxy/releases/latest \
 
 ```sh
 wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
-apk list -I | grep luci-app-homeproxy
+apk list -I | grep -E '^(homeproxy-custom|luci-app-homeproxy)'
 find /etc/homeproxy /etc/config -name "*.apk-new" -print
 ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
 sing-box check -c /var/run/homeproxy/sing-box-c.json
@@ -365,7 +374,7 @@ curl -fsSL https://api.github.com/repos/itv3/homeproxy/releases/latest \
 
 ```sh
 wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
-apk list -I | grep luci-app-homeproxy
+apk list -I | grep -E '^(homeproxy-custom|luci-app-homeproxy)'
 find /etc/homeproxy /etc/config -name "*.apk-new" -print
 ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
 sing-box check -c /var/run/homeproxy/sing-box-c.json

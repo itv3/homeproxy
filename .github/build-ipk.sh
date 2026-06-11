@@ -19,12 +19,44 @@ function get_mk_value() {
 	awk -F "$1:=" '{print $2}' "$PKG_DIR/Makefile" | xargs
 }
 
-PKG_NAME="$(get_mk_value "PKG_NAME")"
+ORIGINAL_PKG_NAME="$(get_mk_value "PKG_NAME")"
+PKG_NAME="${CUSTOM_PKG_NAME:-$ORIGINAL_PKG_NAME}"
 if [ "$RELEASE_TYPE" == "release" ]; then
 	PKG_VERSION="$(get_mk_value "PKG_VERSION")"
 else
 	PKG_VERSION="99.$PKG_SOURCE_DATE_EPOCH-r0"
 fi
+
+PKG_DESCRIPTION="${CUSTOM_PKG_DESCRIPTION:-The modern ImmortalWrt proxy platform for ARM64/AMD64}"
+PKG_URL="${CUSTOM_PKG_URL:-https://github.com/itv3/homeproxy}"
+PKG_ORIGIN="${CUSTOM_PKG_ORIGIN:-$ORIGINAL_PKG_NAME}"
+PKG_MAINTAINER="${CUSTOM_PKG_MAINTAINER:-Tianling Shen <cnsztl@immortalwrt.org>}"
+
+function join_by() {
+	local IFS="$1"
+	shift
+	echo "$*"
+}
+
+APK_PROVIDES=()
+APK_REPLACES=("luci-i18n-homeproxy-zh-cn")
+IPK_PROVIDES=()
+IPK_REPLACES=("luci-i18n-homeproxy-zh-cn")
+IPK_CONFLICTS=("luci-i18n-homeproxy-zh-cn")
+
+if [ "$PKG_NAME" != "$ORIGINAL_PKG_NAME" ]; then
+	APK_PROVIDES+=("$ORIGINAL_PKG_NAME=$PKG_VERSION" "luci-i18n-homeproxy-zh-cn=$PKG_VERSION")
+	APK_REPLACES+=("$ORIGINAL_PKG_NAME")
+	IPK_PROVIDES+=("$ORIGINAL_PKG_NAME")
+	IPK_REPLACES+=("$ORIGINAL_PKG_NAME")
+	IPK_CONFLICTS+=("$ORIGINAL_PKG_NAME")
+fi
+
+APK_PROVIDES_TEXT="$(join_by " " "${APK_PROVIDES[@]}")"
+APK_REPLACES_TEXT="$(join_by " " "${APK_REPLACES[@]}")"
+IPK_PROVIDES_TEXT="$(join_by ", " "${IPK_PROVIDES[@]}")"
+IPK_REPLACES_TEXT="$(join_by ", " "${IPK_REPLACES[@]}")"
+IPK_CONFLICTS_TEXT="$(join_by ", " "${IPK_CONFLICTS[@]}")"
 
 TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
 TEMP_PKG_DIR="$TEMP_DIR/$PKG_NAME"
@@ -110,13 +142,13 @@ default_prerm' > "$TEMP_DIR/pre-deinstall"
 		"${sign_args[@]}" \
 		--info "name:$PKG_NAME" \
 		--info "version:$PKG_VERSION" \
-		--info "description:The modern ImmortalWrt proxy platform for ARM64/AMD64" \
+		--info "description:$PKG_DESCRIPTION" \
 		--info "arch:noarch" \
-		--info "origin:https://github.com/immortalwrt/homeproxy" \
-		--info "url:" \
-		--info "maintainer:Tianling Shen <cnsztl@immortalwrt.org>" \
-		--info "provides:" \
-		--info "replaces:luci-i18n-homeproxy-zh-cn" \
+		--info "origin:$PKG_ORIGIN" \
+		--info "url:$PKG_URL" \
+		--info "maintainer:$PKG_MAINTAINER" \
+		--info "provides:$APK_PROVIDES_TEXT" \
+		--info "replaces:$APK_REPLACES_TEXT" \
 		--info "replaces-priority:10" \
 		--script "post-install:$TEMP_DIR/post-install" \
 		--script "post-upgrade:$TEMP_DIR/post-upgrade" \
@@ -133,15 +165,17 @@ else
 		Package: $PKG_NAME
 		Version: $PKG_VERSION
 		Depends: libc, sing-box, firewall4, kmod-nft-tproxy, ucode-mod-digest, ucode-mod-socket, ucode-mod-uloop
-		Replaces: luci-i18n-homeproxy-zh-cn
-		Source: https://github.com/immortalwrt/homeproxy
+		Provides: $IPK_PROVIDES_TEXT
+		Replaces: $IPK_REPLACES_TEXT
+		Conflicts: $IPK_CONFLICTS_TEXT
+		Source: $PKG_URL
 		SourceName: $PKG_NAME
 		Section: luci
 		SourceDateEpoch: $PKG_SOURCE_DATE_EPOCH
-		Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
+		Maintainer: $PKG_MAINTAINER
 		Architecture: all
 		Installed-Size: TO-BE-FILLED-BY-IPKG-BUILD
-		Description:  The modern ImmortalWrt proxy platform for ARM64/AMD64
+		Description:  $PKG_DESCRIPTION
 	EOF
 	chmod 0644 "$TEMP_PKG_DIR/CONTROL/control"
 

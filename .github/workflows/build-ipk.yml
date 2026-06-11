@@ -93,8 +93,12 @@ jobs:
       - name: Build ipk file
         run: |
           pushd .github
-          fakeroot bash build-ipk.sh apk "${{ github.event_name }}"
-          fakeroot bash build-ipk.sh ipk "${{ github.event_name }}"
+          CUSTOM_PKG_NAME="homeproxy-custom" \
+            CUSTOM_PKG_DESCRIPTION="HomeProxy Custom - replaces original luci-app-homeproxy; zh-cn built in" \
+            fakeroot bash build-ipk.sh apk "${{ github.event_name }}"
+          CUSTOM_PKG_NAME="homeproxy-custom" \
+            CUSTOM_PKG_DESCRIPTION="HomeProxy Custom - replaces original luci-app-homeproxy; zh-cn built in" \
+            fakeroot bash build-ipk.sh ipk "${{ github.event_name }}"
           popd
 
       - name: Publishing APK files to GitHub Artifacts
