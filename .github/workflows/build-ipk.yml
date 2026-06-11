@@ -103,7 +103,6 @@ jobs:
         with:
           name: homeproxy-apk-packages
           path: .github/*.apk
-          archive: false
           include-hidden-files: true
           if-no-files-found: error
 
@@ -113,6 +112,5 @@ jobs:
         with:
           name: homeproxy-ipk-packages
           path: .github/*.ipk
-          archive: false
           include-hidden-files: true
           if-no-files-found: error
