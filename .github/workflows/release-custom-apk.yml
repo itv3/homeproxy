@@ -84,22 +84,13 @@ jobs:
         run: |
           set -euo pipefail
           app_apk_file="$(ls .github/luci-app-homeproxy_*.apk | head -n 1)"
-          i18n_apk_file="$(ls .github/luci-i18n-homeproxy-zh-cn_*.apk | head -n 1)"
           app_apk_base="$(basename "$app_apk_file")"
-          i18n_apk_base="$(basename "$i18n_apk_file")"
           app_version="${app_apk_base#luci-app-homeproxy_}"
           app_version="${app_version%_all.apk}"
-          i18n_version="${i18n_apk_base#luci-i18n-homeproxy-zh-cn_}"
-          i18n_version="${i18n_version%_all.apk}"
           versioned_app_apk="luci-app-homeproxy-${app_version}.apk"
-          versioned_i18n_apk="luci-i18n-homeproxy-zh-cn-${i18n_version}.apk"
           cp "$app_apk_file" "$versioned_app_apk"
-          cp "$i18n_apk_file" "$versioned_i18n_apk"
           cp "$app_apk_file" luci-app-homeproxy-custom_all.apk
-          {
-            echo "VERSIONED_APP_APK=${versioned_app_apk}"
-            echo "VERSIONED_I18N_APK=${versioned_i18n_apk}"
-          } >> "$GITHUB_ENV"
+          echo "VERSIONED_APP_APK=${versioned_app_apk}" >> "$GITHUB_ENV"
 
           mkdir -p apk-keys
           cp homeproxy-custom.pem apk-keys/
@@ -108,14 +99,13 @@ jobs:
             --sign-key homeproxy-custom.key \
             --description "HomeProxy Custom ${GITHUB_REF_NAME}" \
             --output Packages.adb \
-            "$versioned_app_apk" "$versioned_i18n_apk"
+            "$versioned_app_apk"
 
           echo "ndx https://github.com/itv3/homeproxy/releases/download/${GITHUB_REF_NAME}/Packages.adb" > homeproxy-custom.list
 
           sha256sum \
             luci-app-homeproxy-custom_all.apk \
             "$versioned_app_apk" \
-            "$versioned_i18n_apk" \
             Packages.adb \
             homeproxy-custom.pem \
             homeproxy-custom.list > SHA256SUMS.txt
@@ -128,7 +118,7 @@ jobs:
 
           - APK 使用 HomeProxy Custom 公钥签名，支持导入公钥后通过 WebUI 上传安装
           - 发布 v3 软件源索引 `Packages.adb`，支持添加软件源后通过软件包管理器安装 / 升级
-          - 单独发布 `luci-i18n-homeproxy-zh-cn` 翻译包，简体中文界面不再依赖官方翻译包版本
+          - 简体中文翻译已内置到 `luci-app-homeproxy` 主包，不需要再单独安装翻译包
 
           ### 一键安装
 
@@ -139,12 +129,12 @@ jobs:
           ### WebUI 安装
 
           1. 在「软件包仓库公钥」里添加 `homeproxy-custom.pem`。
-          2. 在「软件包」里上传 `luci-app-homeproxy-custom_all.apk` 安装 / 升级。
-          3. 如需同步更新中文翻译，继续上传 `luci-i18n-homeproxy-zh-cn-<version>.apk`，或使用一键安装 / 软件源方式。
+          2. 如已安装官方 `luci-i18n-homeproxy-zh-cn`，先删除该翻译包。
+          3. 在「软件包」里上传 `luci-app-homeproxy-custom_all.apk` 安装 / 升级。
 
           ### 软件源
 
-          添加 `homeproxy-custom.list` 后，软件包管理器可直接安装 / 升级 `luci-app-homeproxy` 和 `luci-i18n-homeproxy-zh-cn`。
+          添加 `homeproxy-custom.list` 后，软件包管理器可直接安装 / 升级 `luci-app-homeproxy`。
           EOF
 
       - name: Publish GitHub release
@@ -157,7 +147,6 @@ jobs:
           assets=(
             luci-app-homeproxy-custom_all.apk
             "${VERSIONED_APP_APK}"
-            "${VERSIONED_I18N_APK}"
             Packages.adb
             homeproxy-custom.pem
             homeproxy-custom.list

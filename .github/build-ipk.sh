@@ -20,7 +20,6 @@ function get_mk_value() {
 }
 
 PKG_NAME="$(get_mk_value "PKG_NAME")"
-I18N_NAME="luci-i18n-homeproxy-zh-cn"
 if [ "$RELEASE_TYPE" == "release" ]; then
 	PKG_VERSION="$(get_mk_value "PKG_VERSION")"
 else
@@ -29,33 +28,26 @@ fi
 
 TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
 TEMP_PKG_DIR="$TEMP_DIR/$PKG_NAME"
-TEMP_I18N_DIR="$TEMP_DIR/$I18N_NAME"
 mkdir -p "$TEMP_PKG_DIR/lib/upgrade/keep.d/"
+mkdir -p "$TEMP_PKG_DIR/usr/lib/lua/luci/i18n/"
 mkdir -p "$TEMP_PKG_DIR/www/"
 if [ "$PKG_MGR" == "apk" ]; then
 	mkdir -p "$TEMP_PKG_DIR/lib/apk/packages/"
 else
 	mkdir -p "$TEMP_PKG_DIR/CONTROL/"
 fi
-mkdir -p "$TEMP_I18N_DIR/etc/uci-defaults/"
-mkdir -p "$TEMP_I18N_DIR/usr/lib/lua/luci/i18n/"
-if [ "$PKG_MGR" == "apk" ]; then
-	mkdir -p "$TEMP_I18N_DIR/lib/apk/packages/"
-else
-	mkdir -p "$TEMP_I18N_DIR/CONTROL/"
-fi
 
 cp -fpR "$PKG_DIR/htdocs"/* "$TEMP_PKG_DIR/www/"
 cp -fpR "$PKG_DIR/root"/* "$TEMP_PKG_DIR/"
-po2lmo "$PKG_DIR/po/zh_Hans/homeproxy.po" "$TEMP_I18N_DIR/usr/lib/lua/luci/i18n/homeproxy.zh-cn.lmo"
+po2lmo "$PKG_DIR/po/zh_Hans/homeproxy.po" "$TEMP_PKG_DIR/usr/lib/lua/luci/i18n/homeproxy.zh-cn.lmo"
 
-cat > "$TEMP_I18N_DIR/etc/uci-defaults/$I18N_NAME" <<-EOF
+cat > "$TEMP_PKG_DIR/etc/uci-defaults/$PKG_NAME-i18n" <<-EOF
 #!/bin/sh
 uci set luci.languages.zh_cn='简体中文 (Simplified Chinese)'
 uci commit luci
 exit 0
 EOF
-chmod 0755 "$TEMP_I18N_DIR/etc/uci-defaults/$I18N_NAME"
+chmod 0755 "$TEMP_PKG_DIR/etc/uci-defaults/$PKG_NAME-i18n"
 
 cat > "$TEMP_PKG_DIR/lib/upgrade/keep.d/$PKG_NAME" <<-EOF
 /etc/homeproxy/certs/
@@ -66,7 +58,6 @@ EOF
 
 if [ "$PKG_MGR" == "apk" ]; then
 	find "$TEMP_PKG_DIR" -type f,l -printf '/%P\n' | sort > "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.list"
-	find "$TEMP_I18N_DIR" -type f,l -printf '/%P\n' | sort > "$TEMP_I18N_DIR/lib/apk/packages/$I18N_NAME.list"
 	echo "/etc/config/homeproxy" >> "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.conffiles"
 	cat "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.conffiles" | while IFS= read -r file; do
 		[ -f "$TEMP_PKG_DIR/$file" ] || continue
@@ -125,6 +116,8 @@ default_prerm' > "$TEMP_DIR/pre-deinstall"
 		--info "url:" \
 		--info "maintainer:Tianling Shen <cnsztl@immortalwrt.org>" \
 		--info "provides:" \
+		--info "replaces:luci-i18n-homeproxy-zh-cn" \
+		--info "replaces_priority:10" \
 		--script "post-install:$TEMP_DIR/post-install" \
 		--script "post-upgrade:$TEMP_DIR/post-upgrade" \
 		--script "pre-deinstall:$TEMP_DIR/pre-deinstall" \
@@ -132,22 +125,7 @@ default_prerm' > "$TEMP_DIR/pre-deinstall"
 		--files "$TEMP_PKG_DIR" \
 		--output "$TEMP_DIR/${PKG_NAME}_${PKG_VERSION}.apk"
 
-	apk mkpkg \
-		"${sign_args[@]}" \
-		--info "name:$I18N_NAME" \
-		--info "version:$PKG_VERSION" \
-		--info "description:Translation for luci-app-homeproxy - Simplified Chinese" \
-		--info "arch:noarch" \
-		--info "origin:https://github.com/itv3/homeproxy" \
-		--info "url:" \
-		--info "maintainer:Tianling Shen <cnsztl@immortalwrt.org>" \
-		--info "provides:" \
-		--info "depends:luci-app-homeproxy" \
-		--files "$TEMP_I18N_DIR" \
-		--output "$TEMP_DIR/${I18N_NAME}_${PKG_VERSION}.apk"
-
 	mv "$TEMP_DIR/${PKG_NAME}_${PKG_VERSION}.apk" "$BASE_DIR/${PKG_NAME}_${PKG_VERSION}_all.apk"
-	mv "$TEMP_DIR/${I18N_NAME}_${PKG_VERSION}.apk" "$BASE_DIR/${I18N_NAME}_${PKG_VERSION}_all.apk"
 else
 	mkdir -p "$TEMP_PKG_DIR/CONTROL/"
 
@@ -155,6 +133,7 @@ else
 		Package: $PKG_NAME
 		Version: $PKG_VERSION
 		Depends: libc, sing-box, firewall4, kmod-nft-tproxy, ucode-mod-digest, ucode-mod-socket, ucode-mod-uloop
+		Replaces: luci-i18n-homeproxy-zh-cn
 		Source: https://github.com/immortalwrt/homeproxy
 		SourceName: $PKG_NAME
 		Section: luci
@@ -191,38 +170,7 @@ default_prerm $0 $@' > "$TEMP_PKG_DIR/CONTROL/prerm"
 
 	ipkg-build -m "" "$TEMP_PKG_DIR" "$TEMP_DIR"
 
-	cat > "$TEMP_I18N_DIR/CONTROL/control" <<-EOF
-		Package: $I18N_NAME
-		Version: $PKG_VERSION
-		Depends: luci-app-homeproxy
-		Source: https://github.com/itv3/homeproxy
-		SourceName: $PKG_NAME
-		Section: luci
-		SourceDateEpoch: $PKG_SOURCE_DATE_EPOCH
-		Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
-		Architecture: all
-		Installed-Size: TO-BE-FILLED-BY-IPKG-BUILD
-		Description:  Translation for luci-app-homeproxy - Simplified Chinese
-	EOF
-	chmod 0644 "$TEMP_I18N_DIR/CONTROL/control"
-
-	echo -e '#!/bin/sh
-[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
-[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
-. ${IPKG_INSTROOT}/lib/functions.sh
-default_postinst $0 $@' > "$TEMP_I18N_DIR/CONTROL/postinst"
-	chmod 0755 "$TEMP_I18N_DIR/CONTROL/postinst"
-
-	echo -e '#!/bin/sh
-[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
-. ${IPKG_INSTROOT}/lib/functions.sh
-default_prerm $0 $@' > "$TEMP_I18N_DIR/CONTROL/prerm"
-	chmod 0755 "$TEMP_I18N_DIR/CONTROL/prerm"
-
-	ipkg-build -m "" "$TEMP_I18N_DIR" "$TEMP_DIR"
-
 	mv "$TEMP_DIR/${PKG_NAME}_${PKG_VERSION}_all.ipk" "$BASE_DIR/${PKG_NAME}_${PKG_VERSION}_all.ipk"
-	mv "$TEMP_DIR/${I18N_NAME}_${PKG_VERSION}_all.ipk" "$BASE_DIR/${I18N_NAME}_${PKG_VERSION}_all.ipk"
 fi
 
 rm -rf "$TEMP_DIR"

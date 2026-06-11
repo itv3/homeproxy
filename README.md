@@ -73,7 +73,7 @@
 7. 自定义 Release 自动发布
 
    - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
-   - 打 `custom-*` tag 后会现场构建签名 APK、中文翻译包和 v3 软件源索引，并自动发布到 GitHub Releases。
+   - 打 `custom-*` tag 后会现场构建内置中文翻译的签名 APK 和 v3 软件源索引，并自动发布到 GitHub Releases。
    - 一键安装会自动导入公钥、配置软件源并安装 / 升级 HomeProxy。
 
 8. 定时检查上游更新
@@ -97,16 +97,18 @@ wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enha
 - 导入 `homeproxy-custom.pem` 软件包公钥。
 - 添加 `homeproxy-custom.list` 软件源。
 - 执行 `apk update`。
-- 安装 / 升级 `luci-app-homeproxy` 和 `luci-i18n-homeproxy-zh-cn`。
+- 移除旧的独立翻译包 `luci-i18n-homeproxy-zh-cn`。
+- 安装 / 升级已内置简体中文翻译的 `luci-app-homeproxy`。
 
 ### B. WebUI 安装 / 升级
 
 1. 打开 `系统 -> 管理权 -> 软件包仓库公钥`。
 2. 添加 latest release 中的 `homeproxy-custom.pem`。
-3. 打开 `系统 -> 软件包`，上传 latest release 中的 `luci-app-homeproxy-custom_all.apk`。
-4. 确认安装 / 升级。
+3. 如果已经安装官方 `luci-i18n-homeproxy-zh-cn`，先在软件包里删除该翻译包。
+4. 打开 `系统 -> 软件包`，上传 latest release 中的 `luci-app-homeproxy-custom_all.apk`。
+5. 确认安装 / 升级。
 
-如果需要同步更新简体中文翻译，继续上传 latest release 中的 `luci-i18n-homeproxy-zh-cn-<version>.apk`，或直接使用一键安装 / 软件源方式。
+`luci-app-homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。
 
 ### C. 软件源安装 / 升级
 
@@ -116,7 +118,8 @@ wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enha
 wget -O /etc/apk/keys/homeproxy-custom.pem https://github.com/itv3/homeproxy/releases/latest/download/homeproxy-custom.pem
 wget -O /etc/apk/repositories.d/homeproxy-custom.list https://github.com/itv3/homeproxy/releases/latest/download/homeproxy-custom.list
 apk update
-apk add luci-app-homeproxy luci-i18n-homeproxy-zh-cn
+apk del luci-i18n-homeproxy-zh-cn 2>/dev/null || true
+apk add luci-app-homeproxy
 ```
 
 清理升级产生的 `.apk-new` 文件：
@@ -212,12 +215,11 @@ git tag -a "$TAG" -m "HomeProxy Custom ${TAG#custom-}"
 git push origin "$TAG"
 ```
 
-推送 tag 后，`Release custom APK` workflow 会现场构建签名 APK、中文翻译包和软件源索引，创建 GitHub Release，并上传：
+推送 tag 后，`Release custom APK` workflow 会现场构建内置中文翻译的签名 APK 和软件源索引，创建 GitHub Release，并上传：
 
 ```text
 luci-app-homeproxy-custom_all.apk
 luci-app-homeproxy-<version>.apk
-luci-i18n-homeproxy-zh-cn-<version>.apk
 Packages.adb
 homeproxy-custom.pem
 homeproxy-custom.list

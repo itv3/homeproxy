@@ -31,10 +31,13 @@ wget -O "/etc/apk/keys/$KEY_NAME" "$KEY_URL"
 echo "configure repository"
 wget -O "$REPO_LIST" "$REPO_LIST_URL"
 
+echo "remove standalone translation package if installed"
+apk del luci-i18n-homeproxy-zh-cn 2>/dev/null || true
+
 echo "update package index"
 if apk update; then
 	echo "install packages from repository"
-	apk add luci-app-homeproxy luci-i18n-homeproxy-zh-cn
+	apk add luci-app-homeproxy
 else
 	echo "warning: repository update failed, falling back to direct APK install" >&2
 	echo "download: $URL"
