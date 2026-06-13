@@ -42,11 +42,11 @@ install_direct_apk() {
 	wget -O "$TMP_APK" "$URL"
 
 	echo "install package"
-	apk add --allow-untrusted "$TMP_APK"
+	apk add --upgrade --allow-untrusted "$TMP_APK"
 }
 
 echo "update package index"
-if apk update && apk add "$PKG_NAME"; then
+if apk update && apk add --upgrade "$PKG_NAME"; then
 	echo "installed from repository"
 else
 	echo "warning: repository install failed, falling back to direct APK install" >&2
