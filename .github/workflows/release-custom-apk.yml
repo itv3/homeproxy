@@ -87,7 +87,6 @@ jobs:
         run: |
           set -euo pipefail
           app_apk_file="$(ls .github/homeproxy-custom_*.apk | head -n 1)"
-          app_apk_base="$(basename "$app_apk_file")"
           cp "$app_apk_file" homeproxy-custom_all.apk
 
           mkdir -p apk-keys
@@ -98,7 +97,7 @@ jobs:
             --description "HomeProxy Custom ${GITHUB_REF_NAME}" \
             --pkgname-spec '${name}_all.apk' \
             --output Packages.adb \
-            "$app_apk_file"
+            homeproxy-custom_all.apk
           cat > RELEASE_NOTES.md <<'EOF'
           ## HomeProxy Custom
 
