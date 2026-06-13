@@ -105,9 +105,7 @@ jobs:
 
           ### 本版本变更
 
-          - 更新软件包页面描述，和当前 HomeProxy Custom 功能范围保持一致
-          - 梳理 README 的功能顺序和安装说明结构
-          - 精简 release notes 模板，仅保留具体版本变化
+          - 修复跨路由恢复配置后 Clash API 继续监听旧 LAN 地址，导致 sing-box 无法启动的问题
           EOF
 
       - name: Publish GitHub release

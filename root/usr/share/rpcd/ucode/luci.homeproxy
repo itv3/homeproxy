@@ -8,6 +8,7 @@
 'use strict';
 
 import { access, error, lstat, popen, readfile, stat, writefile } from 'fs';
+import { cursor } from 'uci';
 
 /* Kanged from ucode/luci */
 function shellquote(s) {
@@ -37,6 +38,138 @@ function commandOutput(command) {
 	}
 
 	return out;
+}
+
+function isEmpty(value) {
+	return !value || value === 'nil' || (type(value) in ['array', 'object'] && length(value) === 0);
+}
+
+function firstValue(value) {
+	return (type(value) === 'array') ? value[0] : value;
+}
+
+function stripCidr(value) {
+	return replace(trim(firstValue(value) || ''), /\/.*$/, '');
+}
+
+function isIPv4Address(value) {
+	return !!match(value || '', /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/);
+}
+
+function isPortableBindHost(value) {
+	value = lc(trim(value || ''));
+
+	return value === 'localhost' ||
+		value === '0.0.0.0' ||
+		value === '::' ||
+		value === '[::]' ||
+		value === '::1' ||
+		value === '[::1]' ||
+		!!match(value, /^127\./);
+}
+
+function appendIPv4Address(addresses, value) {
+	value = stripCidr(value);
+
+	if (isIPv4Address(value) && index(addresses, value) === -1)
+		push(addresses, value);
+}
+
+function localIPv4Addresses() {
+	const netuci = cursor();
+	let addresses = [];
+
+	netuci.load('network');
+
+	let lan_ipaddr = netuci.get('network', 'lan', 'ipaddr');
+	if (type(lan_ipaddr) === 'array') {
+		for (let addr in lan_ipaddr)
+			appendIPv4Address(addresses, addr);
+	} else {
+		appendIPv4Address(addresses, lan_ipaddr);
+	}
+
+	for (let line in split(commandOutput('/sbin/ip -4 -o addr show scope global'), /\n/)) {
+		let matched = match(line, /[ \t]inet[ \t]+([0-9.]+)(\/[0-9]+)?[ \t]/);
+		if (matched)
+			appendIPv4Address(addresses, matched[1]);
+	}
+
+	return addresses;
+}
+
+function parseController(value, default_port) {
+	value = trim(replace(firstValue(value) || '', /^https?:\/\//, ''));
+	value = replace(value, /\/.*$/, '');
+
+	let matched = match(value, /^\[([^\]]+)\](:([0-9]+))?$/);
+	if (matched)
+		return { host: matched[1], port: int(matched[3] || default_port) };
+
+	matched = match(value, /^([^:]+):([0-9]+)$/);
+	if (matched)
+		return { host: matched[1], port: int(matched[2]) };
+
+	return { host: value, port: int(default_port) };
+}
+
+function formatController(host, port) {
+	return sprintf((index(host, ':') >= 0) ? '[%s]:%d' : '%s:%d', host, port);
+}
+
+function normalizeLocalControllerOption(uci, local_addresses, fallback_host, option, default_port, set_when_empty) {
+	let value = uci.get('homeproxy', 'config', option);
+
+	if (isEmpty(value)) {
+		if (!set_when_empty)
+			return null;
+
+		let next = formatController(fallback_host, default_port);
+		uci.set('homeproxy', 'config', option, next);
+		return next;
+	}
+
+	let controller = parseController(value, default_port),
+	    host = controller.host;
+
+	if (isEmpty(host))
+		host = fallback_host;
+	else if (isPortableBindHost(host))
+		return null;
+	else if (!isIPv4Address(host) || index(local_addresses, host) !== -1)
+		return null;
+
+	let next = formatController(fallback_host, controller.port || default_port);
+	uci.set('homeproxy', 'config', option, next);
+	return next;
+}
+
+function normalizeRestoredLocalControllers() {
+	let local_addresses = localIPv4Addresses();
+	let fallback_host = local_addresses[0];
+
+	if (isEmpty(fallback_host))
+		return {};
+
+	const hpuci = cursor();
+	let adjustments = {};
+
+	hpuci.load('homeproxy');
+
+	for (let item in [
+		[ 'clash_api_external_controller', 9090, true ],
+		[ 'clash_api_proxy_external_controller', 9091, false ]
+	]) {
+		let next = normalizeLocalControllerOption(hpuci, local_addresses, fallback_host, item[0], item[1], item[2]);
+
+		if (next)
+			adjustments[item[0]] = next;
+	}
+
+	if (length(keys(adjustments)))
+		hpuci.commit('homeproxy');
+
+	return adjustments;
 }
 
 function archiveMemberPath(line) {
@@ -308,6 +441,7 @@ const methods = {
 			if (exit_code !== 0)
 				return { result: false, error: `恢复失败，退出码 ${exit_code}`, rollback: ROLLBACK_ARCHIVE };
 
+			let adjustments = normalizeRestoredLocalControllers();
 			system('/sbin/uci commit homeproxy');
 			system(`rm -f ${shellquote(RESTORE_ARCHIVE)} /tmp/luci-indexcache.*`);
 			system('rm -rf /tmp/luci-modulecache/ 2>/dev/null');
@@ -316,7 +450,8 @@ const methods = {
 			return {
 				result: true,
 				files: check.files,
-				rollback: ROLLBACK_ARCHIVE
+				rollback: ROLLBACK_ARCHIVE,
+				adjustments
 			};
 		}
 	},

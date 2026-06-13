@@ -8,7 +8,7 @@
 'use strict';
 
 import { cursor } from 'uci';
-import { isEmpty, parseURL } from 'homeproxy';
+import { executeCommand, isEmpty, parseURL } from 'homeproxy';
 
 const uci = cursor();
 
@@ -26,6 +26,117 @@ const uciinfra = 'infra',
       uciroutingnode = 'routing_node',
       uciroutingrule = 'routing_rule',
       uciserver = 'server';
+
+function firstValue(value) {
+	return (type(value) === 'array') ? value[0] : value;
+}
+
+function stripCidr(value) {
+	return replace(trim(firstValue(value) || ''), /\/.*$/, '');
+}
+
+function isIPv4Address(value) {
+	return !!match(value || '', /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/);
+}
+
+function isPortableBindHost(value) {
+	value = lc(trim(value || ''));
+
+	return value === 'localhost' ||
+		value === '0.0.0.0' ||
+		value === '::' ||
+		value === '[::]' ||
+		value === '::1' ||
+		value === '[::1]' ||
+		!!match(value, /^127\./);
+}
+
+function appendIPv4Address(addresses, value) {
+	value = stripCidr(value);
+
+	if (isIPv4Address(value) && index(addresses, value) === -1)
+		push(addresses, value);
+}
+
+function localIPv4Addresses() {
+	const netuci = cursor();
+	let addresses = [];
+
+	netuci.load('network');
+
+	let lan_ipaddr = netuci.get('network', 'lan', 'ipaddr');
+	if (type(lan_ipaddr) === 'array') {
+		for (let addr in lan_ipaddr)
+			appendIPv4Address(addresses, addr);
+	} else {
+		appendIPv4Address(addresses, lan_ipaddr);
+	}
+
+	const ip_addresses = executeCommand('/sbin/ip -4 -o addr show scope global')?.stdout || '';
+	for (let line in split(ip_addresses, /\n/)) {
+		let matched = match(line, /[ \t]inet[ \t]+([0-9.]+)(\/[0-9]+)?[ \t]/);
+		if (matched)
+			appendIPv4Address(addresses, matched[1]);
+	}
+
+	return addresses;
+}
+
+function parseController(value, default_port) {
+	value = trim(replace(firstValue(value) || '', /^https?:\/\//, ''));
+	value = replace(value, /\/.*$/, '');
+
+	let matched = match(value, /^\[([^\]]+)\](:([0-9]+))?$/);
+	if (matched)
+		return { host: matched[1], port: int(matched[3] || default_port) };
+
+	matched = match(value, /^([^:]+):([0-9]+)$/);
+	if (matched)
+		return { host: matched[1], port: int(matched[2]) };
+
+	return { host: value, port: int(default_port) };
+}
+
+function formatController(host, port) {
+	return sprintf((index(host, ':') >= 0) ? '[%s]:%d' : '%s:%d', host, port);
+}
+
+function normalizeLocalControllerOption(local_addresses, fallback_host, option, default_port, set_when_empty) {
+	let value = uci.get(uciconfig, ucimain, option);
+
+	if (isEmpty(value)) {
+		if (set_when_empty)
+			uci.set(uciconfig, ucimain, option, formatController(fallback_host, default_port));
+
+		return;
+	}
+
+	let controller = parseController(value, default_port),
+	    host = controller.host;
+
+	if (isEmpty(host))
+		host = fallback_host;
+	else if (isPortableBindHost(host))
+		return;
+	else if (!isIPv4Address(host) || index(local_addresses, host) !== -1)
+		return;
+
+	uci.set(uciconfig, ucimain, option, formatController(fallback_host, controller.port || default_port));
+}
+
+function normalizeLocalControllerOptions() {
+	let local_addresses = localIPv4Addresses(),
+	    fallback_host = local_addresses[0];
+
+	if (isEmpty(fallback_host))
+		return;
+
+	for (let item in [
+		[ 'clash_api_external_controller', 9090, true ],
+		[ 'clash_api_proxy_external_controller', 9091, false ]
+	])
+		normalizeLocalControllerOption(local_addresses, fallback_host, item[0], item[1], item[2]);
+}
 
 /* chinadns-ng has been removed */
 if (uci.get(uciconfig, uciinfra, 'china_dns_port'))
@@ -81,6 +192,8 @@ if (isEmpty(uci.get(uciconfig, ucimain, 'clash_api_enabled')))
 
 if (isEmpty(uci.get(uciconfig, ucimain, 'clash_api_external_controller')))
 	uci.set(uciconfig, ucimain, 'clash_api_external_controller', '192.168.9.1:9090');
+
+normalizeLocalControllerOptions();
 
 if (isEmpty(uci.get(uciconfig, ucimain, 'clash_api_default_mode')))
 	uci.set(uciconfig, ucimain, 'clash_api_default_mode', 'Rule');
