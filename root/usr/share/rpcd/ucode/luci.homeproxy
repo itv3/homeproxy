@@ -25,6 +25,7 @@ const BACKUP_ARCHIVE = '/tmp/homeproxy-backup.tar.gz';
 const RESTORE_ARCHIVE = '/tmp/homeproxy-restore.tar.gz';
 const ROLLBACK_ARCHIVE = '/tmp/homeproxy-rollback.tar.gz';
 const BACKUP_LIST = '/tmp/homeproxy-backup.list';
+const RESTORE_TEST_DIR = '/tmp/homeproxy-restore-test';
 
 function commandOutput(command) {
 	const fd = popen(`${command} 2>&1`);
@@ -281,6 +282,27 @@ function createBackupArchive(path) {
 	};
 }
 
+function testExtractBackupArchive(path) {
+	system(`rm -rf ${shellquote(RESTORE_TEST_DIR)} && mkdir -p ${shellquote(RESTORE_TEST_DIR)}`);
+	let exit_code = system(`cd ${shellquote(RESTORE_TEST_DIR)} && /bin/tar -xzf ${shellquote(path)} 2>/dev/null`);
+	system(`rm -rf ${shellquote(RESTORE_TEST_DIR)}`);
+
+	if (exit_code !== 0)
+		return { result: false, error: `备份文件损坏，无法完整解压，退出码 ${exit_code}` };
+
+	return { result: true };
+}
+
+function resetBackupTargetPaths() {
+	system('rm -f /etc/config/homeproxy /etc/homeproxy/resources/direct_list.txt /etc/homeproxy/resources/proxy_list.txt');
+	system('rm -rf /etc/homeproxy/certs && mkdir -p /etc/homeproxy/resources /etc/homeproxy/certs');
+}
+
+function extractBackupArchive(path) {
+	resetBackupTargetPaths();
+	return system(`cd / && /bin/tar -xzf ${shellquote(path)}`);
+}
+
 const methods = {
 	acllist_read: {
 		args: { type: 'type' },
@@ -431,15 +453,26 @@ const methods = {
 			if (!check.valid)
 				return { result: false, error: check.error, files: check.files };
 
+			const extract_check = testExtractBackupArchive(RESTORE_ARCHIVE);
+			if (!extract_check.result)
+				return { result: false, error: extract_check.error, files: check.files };
+
 			const rollback = createBackupArchive(ROLLBACK_ARCHIVE);
 			if (!rollback.result)
 				return { result: false, error: `创建回滚包失败: ${rollback.error}` };
 
-			system(`rm -rf /etc/homeproxy/certs && mkdir -p /etc/homeproxy/resources /etc/homeproxy/certs`);
-			let exit_code = system(`cd / && /bin/tar -xzf ${shellquote(RESTORE_ARCHIVE)}`);
+			let exit_code = extractBackupArchive(RESTORE_ARCHIVE);
 
-			if (exit_code !== 0)
-				return { result: false, error: `恢复失败，退出码 ${exit_code}`, rollback: ROLLBACK_ARCHIVE };
+			if (exit_code !== 0) {
+				let rollback_code = extractBackupArchive(ROLLBACK_ARCHIVE);
+				system('/sbin/uci commit homeproxy');
+				system('/etc/init.d/homeproxy restart >/dev/null 2>&1');
+
+				if (rollback_code === 0)
+					return { result: false, error: `恢复失败，已自动回滚，退出码 ${exit_code}`, rollback: ROLLBACK_ARCHIVE };
+
+				return { result: false, error: `恢复失败且自动回滚失败，恢复退出码 ${exit_code}，回滚退出码 ${rollback_code}`, rollback: ROLLBACK_ARCHIVE };
+			}
 
 			let adjustments = normalizeRestoredLocalControllers();
 			system('/sbin/uci commit homeproxy');

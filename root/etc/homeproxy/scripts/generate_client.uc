@@ -43,6 +43,7 @@ const ucinode = 'node';
 const uciruleset = 'ruleset';
 
 const routing_mode = uci.get(uciconfig, ucimain, 'routing_mode') || 'bypass_mainland_china';
+const routing_target_max_depth = 20;
 
 let wan_dns = ubus.call('network.interface', 'status', {'interface': 'wan'})?.['dns-server']?.[0];
 if (!wan_dns)
@@ -441,7 +442,7 @@ function get_routing_target_outbound(target) {
 	return 'cfg-' + routing_node + '-out';
 }
 
-function push_routing_target_outbound(client_config, target, routing_nodes) {
+function push_routing_target_outbound(client_config, target, routing_nodes, seen_path) {
 	const match_target = match(target || '', /^cfg-(.+)-out$/);
 	if (match_target)
 		target = match_target[1];
@@ -451,6 +452,15 @@ function push_routing_target_outbound(client_config, target, routing_nodes) {
 	else if (is_builtin_outbound(target))
 		return;
 
+	if (!seen_path)
+		seen_path = [];
+	if (~index(seen_path, target))
+		die(sprintf('Recursive routing node detected: %s', join(' -> ', [ ...seen_path, target ])));
+
+	if (length(seen_path) >= routing_target_max_depth)
+		die(sprintf('Routing node nesting exceeds %d levels: %s', routing_target_max_depth,
+			join(' -> ', [ ...seen_path, target ])));
+
 	const routing_node = uci.get(uciconfig, target, 'node');
 	if (isEmpty(routing_node)) {
 		if (is_node_section(target)) {
@@ -459,7 +469,7 @@ function push_routing_target_outbound(client_config, target, routing_nodes) {
 			push(routing_nodes, target);
 		}
 	} else if (!(routing_node in ['urltest', 'selector'])) {
-		push_routing_target_outbound(client_config, routing_node, routing_nodes);
+		push_routing_target_outbound(client_config, routing_node, routing_nodes, [ ...seen_path, target ]);
 	} else {
 		return;
 	}

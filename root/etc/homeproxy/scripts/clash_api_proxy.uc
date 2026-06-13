@@ -17,6 +17,7 @@ const uciconfig = 'homeproxy';
 const ucimain = 'config';
 const shadowtls_suffix = '-out-shadowtls';
 const filter_timeout = 10000;
+const fallback_delay_limit = 5;
 
 let next_id = 1;
 let connections = {};
@@ -566,14 +567,26 @@ function fallbackGroupDelay(group_info, request) {
 	if (group === null || type(group.all) !== 'array')
 		return null;
 
-	let results = {};
+	let results = {},
+	    tested = 0,
+	    truncated = false;
 
 	for (let proxy_name in group.all) {
 		if (isShadowTlsTag(proxy_name))
 			continue;
 
+		if (tested >= fallback_delay_limit) {
+			truncated = true;
+			break;
+		}
+
 		results[proxy_name] = testProxyDelay(proxy_name, group_info.query, request);
+		tested++;
 	}
+
+	if (truncated)
+		warn(sprintf('homeproxy clash api proxy: fallback delay for group %s limited to first %d visible proxies\n',
+			group_info.name, fallback_delay_limit));
 
 	return results;
 }

@@ -41,8 +41,10 @@ function downloadFile(path, filename) {
 		a.download = filename;
 		document.body.appendChild(a);
 		a.click();
-		a.remove();
-		window.URL.revokeObjectURL(url);
+		window.setTimeout(() => {
+			a.remove();
+			window.URL.revokeObjectURL(url);
+		}, 100);
 	});
 }
 
