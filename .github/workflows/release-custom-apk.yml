@@ -105,6 +105,7 @@ jobs:
 
           ### 本版本变更
 
+          - 修复 latest 安装路径中 APK 资产名和 `Packages.adb` 索引包名不一致，导致新路由安装 `homeproxy-custom` 失败的问题
           - 修复跨路由恢复配置后 Clash API 继续监听旧 LAN 地址，导致 sing-box 无法启动的问题
           - 修复一键安装脚本在已安装旧版时未显式升级 `homeproxy-custom` 的问题
           EOF
