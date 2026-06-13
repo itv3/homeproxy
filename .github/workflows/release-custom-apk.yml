@@ -96,6 +96,7 @@ jobs:
           apk --keys-dir "$PWD/apk-keys" mkndx \
             --sign-key homeproxy-custom.key \
             --description "HomeProxy Custom ${GITHUB_REF_NAME}" \
+            --pkgname-spec '${name}_all.apk' \
             --output Packages.adb \
             "$app_apk_file"
           cat > RELEASE_NOTES.md <<'EOF'
@@ -109,6 +110,8 @@ jobs:
           - `homeproxy-custom` 会替换上游 `luci-app-homeproxy` 的文件，并内置简体中文翻译
           - APK 使用 HomeProxy Custom 公钥签名，支持导入公钥后通过 WebUI 上传安装
           - 发布 v3 软件源索引 `Packages.adb`，支持添加软件源后通过软件包管理器安装 / 升级
+          - 修复软件源安装时 APK 下载文件名和 release asset 不匹配导致 404 的问题
+          - 一键安装在软件源安装失败时会自动回退到直接 APK 安装
           - 不需要再单独安装 `luci-i18n-homeproxy-zh-cn`
 
           ### 安装场景

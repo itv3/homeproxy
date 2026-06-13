@@ -12,6 +12,8 @@ KEY_URL="https://github.com/$REPO/releases/latest/download/$KEY_NAME"
 REPO_LIST="/etc/apk/repositories.d/homeproxy-custom.list"
 REPO_INDEX_URL="https://github.com/$REPO/releases/latest/download/Packages.adb"
 
+trap 'rm -f "$TMP_APK"' EXIT
+
 echo "HomeProxy Custom installer"
 
 if [ ! -x /usr/bin/apk ]; then
@@ -35,18 +37,20 @@ printf '%s\n' "$REPO_INDEX_URL" > "$REPO_LIST"
 echo "remove standalone translation package if installed"
 apk del luci-i18n-homeproxy-zh-cn 2>/dev/null || true
 
-echo "update package index"
-if apk update; then
-	echo "install packages from repository"
-	apk add "$PKG_NAME"
-else
-	echo "warning: repository update failed, falling back to direct APK install" >&2
+install_direct_apk() {
 	echo "download: $URL"
 	wget -O "$TMP_APK" "$URL"
 
 	echo "install package"
 	apk add --allow-untrusted "$TMP_APK"
-	rm -f "$TMP_APK"
+}
+
+echo "update package index"
+if apk update && apk add "$PKG_NAME"; then
+	echo "installed from repository"
+else
+	echo "warning: repository install failed, falling back to direct APK install" >&2
+	install_direct_apk
 fi
 
 echo "clean .apk-new files"
