@@ -30,26 +30,33 @@
 
 ## 优化内容
 
-1. 支持 SS2022 + ShadowTLS 节点
+1. SS2022 + ShadowTLS
 
    - Shadowsocks 节点页面增加 `启用 ShadowTLS`。
    - 勾选后显示 ShadowTLS 地址、端口、密码、伪装 SNI、版本。
    - 生成 sing-box 配置时使用 Shadowsocks outbound + ShadowTLS detour。
 
-2. 路由节点支持 Selector
+2. Selector 路由节点
 
    - 路由节点类型新增 `Selector`。
    - Selector 可包含具体代理节点。
    - Selector 也可包含已有路由节点，例如 `Proxy_Auto`。
    - 增加递归引用检查，避免路由节点互相引用形成循环。
 
-3. 路由规则可直接选择具体节点
+3. 路由规则直选节点
 
    - 路由规则的出站不再只能选择路由节点。
    - 可以直接选择某个具体代理节点。
    - 生成器会自动补齐该节点需要的 sing-box outbound。
 
-4. 默认开启 Clash API
+4. HomeProxy 配置备份 / 恢复
+
+   - HomeProxy 菜单下新增 `备份 / 恢复` 页面。
+   - 导出 `/etc/config/homeproxy`、`/etc/homeproxy/resources/direct_list.txt`、`/etc/homeproxy/resources/proxy_list.txt`。
+   - 同时导出用户上传到 `/etc/homeproxy/certs/` 的证书和私钥文件。
+   - 导入时只接受上述 HomeProxy 源配置路径，恢复前会生成 `/tmp/homeproxy-rollback.tar.gz` 便于回滚。
+
+5. 默认开启 Clash API
 
    - 默认启用 `experimental.clash_api`。
    - sing-box 真实 Clash API 默认监听 `192.168.9.1:9090`。
@@ -57,26 +64,24 @@
    - 默认允许 MetaCubeXD / Yacd 页面访问。
    - 默认允许浏览器 Private Network Access。
 
-5. 增加 MetaCubeXD 快捷入口
+6. MetaCubeXD 面板入口
 
    - HomeProxy 客户端页面增加 `打开面板` 按钮。
    - 默认跳转到 <https://metacubexd.pages.dev/#/overview>。
    - 跳转时自动带入 HomeProxy 面板代理的 host、port、secret 等参数，MetaCubeXD 切换节点请求会原样转发到真实 Clash API。
 
-6. 增加 HomeProxy 配置备份 / 恢复
+7. 隐藏 ShadowTLS 中间层节点
 
-   - HomeProxy 菜单下新增 `备份 / 恢复` 页面。
-   - 导出 `/etc/config/homeproxy`、`/etc/homeproxy/resources/direct_list.txt`、`/etc/homeproxy/resources/proxy_list.txt`。
-   - 同时导出用户上传到 `/etc/homeproxy/certs/` 的证书和私钥文件。
-   - 导入时只接受上述 HomeProxy 源配置路径，恢复前会生成 `/tmp/homeproxy-rollback.tar.gz` 便于回滚。
+   - MetaCubeXD / Yacd 读取出站列表时会隐藏 `cfg-xxx-out-shadowtls` 中间层节点。
+   - 隐藏的只是 SS2022 + ShadowTLS 生成链路中的中间层节点，不影响真实代理节点和节点切换。
 
-7. 自定义 Release 自动发布
+8. 自定义 Release 自动发布
 
    - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
    - 打 `custom-*` tag 后会现场构建内置中文翻译的签名 APK 和 v3 软件源索引，并自动发布到 GitHub Releases。
    - 一键安装会自动导入公钥、配置软件源并安装 / 升级 HomeProxy。
 
-8. 定时检查上游更新
+9. 定时检查上游更新
 
    - GitHub Actions 每天检查一次 `immortalwrt/homeproxy:master`。
    - 如果上游有新提交，会创建或更新带 `upstream-update` 标签的 Issue。
@@ -84,23 +89,7 @@
 
 ## 安装和更新
 
-### A. 一键安装（推荐，尤其适合从原版 HomeProxy 迁移）
-
-在 OpenWrt / ImmortalWrt 路由器上执行：
-
-```sh
-wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
-```
-
-脚本会自动完成：
-
-- 导入 `homeproxy-custom.pem` 软件包公钥。
-- 添加 HomeProxy Custom 软件源。
-- 执行 `apk update`。
-- 移除旧的独立翻译包 `luci-i18n-homeproxy-zh-cn`。
-- 安装 / 升级已内置简体中文翻译的 `homeproxy-custom`。
-
-### 安装场景说明
+### 安装场景
 
 `homeproxy-custom` 是本仓库发布的自定义 HomeProxy 包，用于替换上游 `luci-app-homeproxy`，不是和原版并存的第二套 HomeProxy。
 
@@ -109,7 +98,17 @@ wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enha
 - 已删除上游 `luci-app-homeproxy`：可以直接安装 `homeproxy-custom`。
 - 简体中文翻译已经内置，不需要再安装 `luci-i18n-homeproxy-zh-cn`。
 
-### B. WebUI 软件源安装 / 升级（推荐）
+### A. 一键安装（推荐）
+
+适合全新安装、升级，以及从原版 HomeProxy 迁移：
+
+```sh
+wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
+```
+
+脚本会自动导入公钥、添加软件源、更新索引并安装 / 升级 `homeproxy-custom`。如果软件源安装失败，会自动回退到直接 APK 安装。
+
+### B. WebUI 软件源安装 / 升级
 
 1. 下载 latest release 中的 `homeproxy-custom.pem`。
 2. 进入 OpenWrt WebUI：`系统 -> 管理权 -> 软件包仓库公钥`，把 `homeproxy-custom.pem` 文件拖进输入框，添加软件包仓库公钥。
@@ -122,15 +121,11 @@ https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb
 4. 回到 `系统 -> 软件包` 页面，点击 `更新列表`，搜索 `homeproxy-custom` 安装。
 5. 以后有新版本，更新列表后可在这个页面直接升级 `homeproxy-custom`。
 
-安装 `homeproxy-custom` 后，不需要再安装列表中的 `luci-app-homeproxy` 或 `luci-i18n-homeproxy-zh-cn`。
-
 ### C. 手动上传 APK 安装 / 升级（备选）
 
 1. 先按上面的方式添加 `homeproxy-custom.pem` 公钥。
 2. 下载 latest release 中的 `homeproxy-custom_all.apk`。
 3. 进入 `系统 -> 软件包`，上传 `homeproxy-custom_all.apk` 安装 / 升级。
-
-`homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。
 
 如果从旧的 `luci-app-homeproxy` 迁移时遇到 `breaks: world[luci-app-homeproxy><...]` 报错，请使用一键安装命令完成迁移。
 

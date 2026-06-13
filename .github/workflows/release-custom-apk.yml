@@ -78,7 +78,7 @@ jobs:
           openssl pkey -in homeproxy-custom.key -pubout -out homeproxy-custom.pem
           pushd .github
           CUSTOM_PKG_NAME="homeproxy-custom" \
-            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、配置导入导出、HomeProxy 源配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏  SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
+            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
             APK_SIGN_KEY="../homeproxy-custom.key" \
             fakeroot bash build-ipk.sh apk "snapshot"
           popd
@@ -105,45 +105,9 @@ jobs:
 
           ### 本版本变更
 
-          - 修复软件源安装时 APK 下载文件名和 release asset 不匹配导致 404 的问题
-          - 一键安装在软件源安装失败时会自动回退到直接 APK 安装
-
-          ### 安装场景
-
-          - 从未安装过 HomeProxy：可直接安装 `homeproxy-custom`
-          - 已安装上游 `luci-app-homeproxy`：安装 `homeproxy-custom` 会替换原版文件
-          - 已删除上游 `luci-app-homeproxy`：可直接安装 `homeproxy-custom`
-
-          ### 一键安装（推荐，尤其适合从原版 HomeProxy 迁移）
-
-          ```sh
-          wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
-          ```
-
-          ### WebUI 安装 / 升级（推荐：添加软件源）
-
-          1. 下载 `homeproxy-custom.pem`。
-          2. 进入 OpenWrt WebUI：「系统」->「管理权」->「软件包仓库公钥」，把 `homeproxy-custom.pem` 文件拖进输入框，添加软件包仓库公钥。
-          3. 进入「系统」->「软件包」->「配置 apk」，在 `/etc/apk/repositories.d/customfeeds.list` 输入框内追加：
-
-          ```text
-          https://github.com/itv3/homeproxy/releases/latest/download/Packages.adb
-          ```
-
-          4. 回到「系统」->「软件包」页面，点击「更新列表」，搜索 `homeproxy-custom` 安装。
-          5. 以后有新版本，更新列表后可在这个页面直接升级 `homeproxy-custom`。
-
-          安装 `homeproxy-custom` 后，不需要再安装列表中的 `luci-app-homeproxy` 或 `luci-i18n-homeproxy-zh-cn`。
-
-          ### 手动上传 APK 安装 / 升级（备选）
-
-          1. 先按上面的方式添加 `homeproxy-custom.pem` 公钥。
-          2. 下载 `homeproxy-custom_all.apk`。
-          3. 进入「系统」->「软件包」，上传 `homeproxy-custom_all.apk` 安装 / 升级。
-
-          `homeproxy-custom_all.apk` 已内置简体中文翻译，不需要再安装单独的翻译包。
-
-          如果从旧的 `luci-app-homeproxy` 迁移时遇到 `breaks: world[luci-app-homeproxy><...]` 报错，请使用一键安装命令完成迁移。
+          - 更新软件包页面描述，和当前 HomeProxy Custom 功能范围保持一致
+          - 梳理 README 的功能顺序和安装说明结构
+          - 精简 release notes 模板，仅保留具体版本变化
           EOF
 
       - name: Publish GitHub release
