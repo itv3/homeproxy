@@ -57,13 +57,21 @@ jobs:
           path: 'po2lmo'
           sparse-checkout: 'modules/luci-base/src'
 
+      - name: Cache apk-tools build
+        uses: actions/cache@v4
+        with:
+          path: apk-tools/build
+          key: ${{ runner.os }}-apk-tools-${{ hashFiles('apk-tools/**/*.c', 'apk-tools/**/*.h', 'apk-tools/**/meson.build') }}
+          restore-keys: |
+            ${{ runner.os }}-apk-tools-
+
       - name: Setup dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E rm -rf /var/lib/man-db/auto-update
           sudo -E apt-get update -qq
-          sudo -E apt-get install -y build-essential curl fakeroot libssl-dev lua5.1 meson ninja-build
+          sudo -E apt-get install -y build-essential curl fakeroot libssl-dev lua5.1 meson ninja-build nodejs
 
           pushd apk-tools
           meson setup build \
@@ -89,6 +97,19 @@ jobs:
 
           curl -fLO "https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/ipkg-build"
           sudo install -m0755 ipkg-build /usr/local/bin/ipkg-build
+
+      - name: Syntax check
+        run: |
+          echo "Checking shell scripts..."
+          sh -n install.sh
+
+          echo "Checking JavaScript files..."
+          node --check htdocs/luci-static/resources/homeproxy.js
+          node --check htdocs/luci-static/resources/view/homeproxy/client.js
+          node --check htdocs/luci-static/resources/view/homeproxy/node.js
+          node --check htdocs/luci-static/resources/view/homeproxy/backup.js
+
+          echo "All syntax checks passed"
 
       - name: Build ipk file
         run: |

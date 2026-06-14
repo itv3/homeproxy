@@ -9,6 +9,7 @@ TMP_APK="/tmp/$ASSET"
 URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 KEY_NAME="homeproxy-custom.pem"
 KEY_URL="https://github.com/$REPO/releases/latest/download/$KEY_NAME"
+KEY_FINGERPRINT=""  # TODO: Set expected SHA256 fingerprint after first release
 REPO_LIST="/etc/apk/repositories.d/homeproxy-custom.list"
 REPO_INDEX_URL="https://github.com/$REPO/releases/latest/download/Packages.adb"
 
@@ -29,7 +30,21 @@ fi
 mkdir -p /etc/apk/keys /etc/apk/repositories.d
 
 echo "install repository key"
-wget -O "/etc/apk/keys/$KEY_NAME" "$KEY_URL"
+wget -O "/etc/apk/keys/$KEY_NAME" "$KEY_URL" || exit 1
+
+if [ -n "$KEY_FINGERPRINT" ]; then
+	echo "verify public key fingerprint"
+	actual_fp=$(sha256sum "/etc/apk/keys/$KEY_NAME" | awk '{print $1}')
+	expected_fp="${KEY_FINGERPRINT#sha256:}"
+	if [ "$actual_fp" != "$expected_fp" ]; then
+		echo "error: public key fingerprint mismatch" >&2
+		echo "expected: $expected_fp" >&2
+		echo "actual: $actual_fp" >&2
+		rm -f "/etc/apk/keys/$KEY_NAME"
+		exit 1
+	fi
+	echo "public key fingerprint verified"
+fi
 
 echo "configure repository"
 printf '%s\n' "$REPO_INDEX_URL" > "$REPO_LIST"
@@ -39,10 +54,17 @@ apk del luci-i18n-homeproxy-zh-cn 2>/dev/null || true
 
 install_direct_apk() {
 	echo "download: $URL"
-	wget -O "$TMP_APK" "$URL"
+	wget -O "$TMP_APK" "$URL" || return 1
+
+	echo "verify APK signature"
+	if ! apk verify --keys-dir /etc/apk/keys "$TMP_APK" 2>&1; then
+		echo "error: APK signature verification failed" >&2
+		rm -f "$TMP_APK"
+		return 1
+	fi
 
 	echo "install package"
-	apk add --upgrade --allow-untrusted "$TMP_APK"
+	apk add --upgrade "$TMP_APK"
 }
 
 echo "update package index"

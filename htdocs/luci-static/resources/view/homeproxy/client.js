@@ -208,11 +208,17 @@ return view.extend({
 			});
 		};
 
+		let pathCache = {};
 		let selectorHasPath = function(start, target, seen) {
 			if (!start || !target)
 				return false;
 			if (start === target)
 				return true;
+
+			let key = start + '->' + target;
+			if (pathCache[key] !== undefined)
+				return pathCache[key];
+
 			if (seen[start])
 				return false;
 
@@ -235,6 +241,7 @@ return view.extend({
 					found = true;
 			});
 
+			pathCache[key] = found;
 			return found;
 		};
 

@@ -11,7 +11,11 @@
 			},
 			"ubus": {
 				"service": [ "list" ],
-				"luci.homeproxy": [ "*" ]
+				"luci.homeproxy": [
+					"connection_check",
+					"resources_get_version",
+					"singbox_get_features"
+				]
 			},
 			"uci": [ "homeproxy" ]
 		},
@@ -19,6 +23,19 @@
 			"file": {
 				"/tmp/homeproxy_certificate.tmp": [ "write" ],
 				"/tmp/homeproxy-restore.tar.gz": [ "write" ]
+			},
+			"ubus": {
+				"luci.homeproxy": [
+					"acllist_read",
+					"acllist_write",
+					"backup_create",
+					"backup_validate",
+					"backup_restore",
+					"certificate_write",
+					"log_clean",
+					"resources_update",
+					"singbox_generator"
+				]
 			},
 			"uci": [ "homeproxy" ]
 		}

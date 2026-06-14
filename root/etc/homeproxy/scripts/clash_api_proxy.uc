@@ -440,8 +440,17 @@ function buildJsonResponse(request, payload) {
 	    origin = headerValue(request.headers, 'Origin');
 
 	if (!isEmpty(origin)) {
-		push(headers, 'Access-Control-Allow-Origin: ' + origin);
-		push(headers, 'Vary: Origin');
+		// Only allow known dashboard origins
+		const allowed_origins = [
+			'https://metacubexd.pages.dev',
+			'https://yacd.metacubex.one',
+			'https://yacd.haishan.me'
+		];
+
+		if (index(allowed_origins, origin) >= 0) {
+			push(headers, 'Access-Control-Allow-Origin: ' + origin);
+			push(headers, 'Vary: Origin');
+		}
 	}
 
 	push(headers, 'Content-Length: ' + length(body));
