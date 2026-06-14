@@ -192,6 +192,62 @@ function normalizeRestoredLocalControllers() {
 	return adjustments;
 }
 
+function restoredServiceExpectations() {
+	const hpuci = cursor();
+	hpuci.load('homeproxy');
+
+	const routing_mode = hpuci.get('homeproxy', 'config', 'routing_mode') || 'bypass_mainland_china',
+	      outbound_node = (routing_mode === 'custom')
+		? (hpuci.get('homeproxy', 'routing', 'default_outbound') || 'nil')
+		: (hpuci.get('homeproxy', 'config', 'main_node') || 'nil'),
+	      server_enabled = hpuci.get('homeproxy', 'server', 'enabled') || '0';
+
+	return {
+		client: !isEmpty(outbound_node),
+		server: server_enabled === '1'
+	};
+}
+
+function checkSingBoxRuntimeConfig(path, label) {
+	const config = stat(path);
+
+	if (!config || config.type !== 'file' || config.size <= 0)
+		return `${label}运行配置未生成`;
+
+	if (system(`/usr/bin/sing-box check --config ${shellquote(path)} >/dev/null 2>&1`) !== 0)
+		return `${label}运行配置校验失败`;
+
+	return null;
+}
+
+function validateRestoredService() {
+	const expected = restoredServiceExpectations();
+
+	if (expected.client) {
+		let error = checkSingBoxRuntimeConfig(`${RUN_DIR}/sing-box-c.json`, '客户端');
+		if (error)
+			return { result: false, error };
+	}
+
+	if (expected.server) {
+		let error = checkSingBoxRuntimeConfig(`${RUN_DIR}/sing-box-s.json`, '服务端');
+		if (error)
+			return { result: false, error };
+	}
+
+	if (expected.client || expected.server) {
+		const status = commandOutput('/etc/init.d/homeproxy status');
+
+		if (match(status, /active with no instances/))
+			return { result: false, error: 'HomeProxy 服务未启动任何实例' };
+
+		if (system('/etc/init.d/homeproxy status >/dev/null 2>&1') !== 0)
+			return { result: false, error: 'HomeProxy 服务状态异常' };
+	}
+
+	return { result: true };
+}
+
 function archiveMemberPath(line) {
 	line = trim(line || '');
 	if (!line)
@@ -764,11 +820,13 @@ const methods = {
 			system('rm -rf /tmp/luci-modulecache/ 2>/dev/null');
 			system('/etc/init.d/homeproxy restart >/dev/null 2>&1');
 
-			// Verify service started successfully
+			// Verify service started successfully and the restored runtime
+			// configs are valid. procd may report "active with no instances"
+			// with exit code 0, so status alone is not a sufficient check.
 			sleep(2000);
-			let service_check = system('/etc/init.d/homeproxy status >/dev/null 2>&1');
+			let service_check = validateRestoredService();
 
-			if (service_check !== 0) {
+			if (!service_check.result) {
 				// Service failed to start, rollback
 				let rollback_code = extractBackupArchive(rollback_work_dir, rollback_manifest);
 				system(`rm -rf ${shellquote(work_dir)} ${shellquote(rollback_work_dir)}`);
@@ -776,9 +834,9 @@ const methods = {
 				system('/etc/init.d/homeproxy restart >/dev/null 2>&1');
 
 				if (rollback_code === 0)
-					return { result: false, error: '恢复后服务启动失败，已自动回滚', rollback: ROLLBACK_ARCHIVE };
+					return { result: false, error: `${service_check.error}，已自动回滚`, rollback: ROLLBACK_ARCHIVE };
 
-				return { result: false, error: '恢复后服务启动失败且自动回滚失败', rollback: ROLLBACK_ARCHIVE };
+				return { result: false, error: `${service_check.error}，且自动回滚失败`, rollback: ROLLBACK_ARCHIVE };
 			}
 
 			// Success, clean up work directories
