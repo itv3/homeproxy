@@ -455,11 +455,23 @@ function push_routing_target_outbound(client_config, target, routing_nodes, seen
 	if (!seen_path)
 		seen_path = [];
 	if (~index(seen_path, target))
-		die(sprintf('Recursive routing node detected: %s', join(' -> ', [ ...seen_path, target ])));
+		die(sprintf('路由节点配置错误：检测到循环引用\n' +
+			'循环路径: %s\n\n' +
+			'解决方法:\n' +
+			'1. 进入 LuCI 界面 -> 服务 -> HomeProxy -> 路由节点\n' +
+			'2. 检查以下节点的"出站"配置\n' +
+			'3. 移除循环引用\n',
+			join(' -> ', [ ...seen_path, target ])));
 
 	if (length(seen_path) >= routing_target_max_depth)
-		die(sprintf('Routing node nesting exceeds %d levels: %s', routing_target_max_depth,
-			join(' -> ', [ ...seen_path, target ])));
+		die(sprintf('路由节点配置错误：嵌套层级过深\n' +
+			'当前路径: %s\n' +
+			'最大允许层级: %d\n\n' +
+			'解决方法:\n' +
+			'1. 简化路由节点的嵌套结构\n' +
+			'2. 避免过多的 Selector 嵌套\n',
+			join(' -> ', [ ...seen_path, target ]),
+			routing_target_max_depth));
 
 	const routing_node = uci.get(uciconfig, target, 'node');
 	if (isEmpty(routing_node)) {

@@ -73,6 +73,7 @@ jobs:
             echo "HOMEPROXY_APK_SIGN_KEY secret is required" >&2
             exit 1
           fi
+
           umask 077
           printf '%s\n' "${HOMEPROXY_APK_SIGN_KEY}" > homeproxy-custom.key
           openssl pkey -in homeproxy-custom.key -pubout -out homeproxy-custom.pem
@@ -86,6 +87,15 @@ jobs:
       - name: Prepare release assets
         run: |
           set -euo pipefail
+
+          # Setup trap to clean private key on exit
+          cleanup_key() {
+            if [ -f "homeproxy-custom.key" ]; then
+              shred -u homeproxy-custom.key 2>/dev/null || rm -f homeproxy-custom.key
+            fi
+          }
+          trap cleanup_key EXIT INT TERM
+
           app_apk_file="$(ls .github/homeproxy-custom_*.apk | head -n 1)"
           cp "$app_apk_file" homeproxy-custom_all.apk
 
@@ -98,6 +108,10 @@ jobs:
             --pkgname-spec '${name}_all.apk' \
             --output Packages.adb \
             homeproxy-custom_all.apk
+
+          # Clean up private key immediately after signing
+          cleanup_key
+          trap - EXIT INT TERM
           cat > RELEASE_NOTES.md <<'EOF'
           ## HomeProxy Custom
 

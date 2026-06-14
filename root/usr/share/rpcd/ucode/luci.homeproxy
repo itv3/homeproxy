@@ -264,8 +264,26 @@ function createBackupArchive(path) {
 	writefile(BACKUP_LIST, join('\n', files) + '\n');
 	system(`rm -f ${shellquote(path)}`);
 
-	let exit_code = system(`cd / && /bin/tar -czf ${shellquote(path)} -T ${shellquote(BACKUP_LIST)}`);
-	system(`rm -f ${shellquote(BACKUP_LIST)}`);
+	// Generate SHA-256 manifest
+	let manifest = {};
+	for (let file in files) {
+		let fullpath = '/' + file;
+		let filestat = stat(fullpath);
+		if (filestat?.type === 'file') {
+			let hash = trim(commandOutput(`sha256sum ${shellquote(fullpath)} 2>/dev/null | awk '{print $1}'`));
+			manifest[file] = {
+				size: filestat.size,
+				sha256: hash
+			};
+		}
+	}
+
+	// Write manifest to temporary file
+	const manifest_file = '/tmp/homeproxy-backup-manifest.json';
+	writefile(manifest_file, sprintf('%J', manifest));
+
+	let exit_code = system(`cd / && /bin/tar -czf ${shellquote(path)} -T ${shellquote(BACKUP_LIST)} && /bin/tar -rzf ${shellquote(path)} -C /tmp homeproxy-backup-manifest.json`);
+	system(`rm -f ${shellquote(BACKUP_LIST)} ${shellquote(manifest_file)}`);
 
 	if (exit_code !== 0)
 		return { result: false, error: `tar 打包失败，退出码 ${exit_code}` };
@@ -285,11 +303,49 @@ function createBackupArchive(path) {
 function testExtractBackupArchive(path) {
 	system(`rm -rf ${shellquote(RESTORE_TEST_DIR)} && mkdir -p ${shellquote(RESTORE_TEST_DIR)}`);
 	let exit_code = system(`cd ${shellquote(RESTORE_TEST_DIR)} && /bin/tar -xzf ${shellquote(path)} 2>/dev/null`);
-	system(`rm -rf ${shellquote(RESTORE_TEST_DIR)}`);
 
-	if (exit_code !== 0)
+	if (exit_code !== 0) {
+		system(`rm -rf ${shellquote(RESTORE_TEST_DIR)}`);
 		return { result: false, error: `备份文件损坏，无法完整解压，退出码 ${exit_code}` };
+	}
 
+	// Verify manifest if present
+	const manifest_path = `${RESTORE_TEST_DIR}/homeproxy-backup-manifest.json`;
+	const manifest_content = readfile(manifest_path);
+
+	if (manifest_content) {
+		let manifest = {};
+		try {
+			manifest = json(manifest_content);
+		} catch (e) {
+			system(`rm -rf ${shellquote(RESTORE_TEST_DIR)}`);
+			return { result: false, error: '备份清单格式错误' };
+		}
+
+		// Verify each file's hash
+		for (let file in manifest) {
+			let fullpath = `${RESTORE_TEST_DIR}/${file}`;
+			let filestat = stat(fullpath);
+
+			if (!filestat || filestat.type !== 'file') {
+				system(`rm -rf ${shellquote(RESTORE_TEST_DIR)}`);
+				return { result: false, error: `备份文件缺失: ${file}` };
+			}
+
+			if (filestat.size !== manifest[file].size) {
+				system(`rm -rf ${shellquote(RESTORE_TEST_DIR)}`);
+				return { result: false, error: `备份文件大小不匹配: ${file}` };
+			}
+
+			let hash = trim(commandOutput(`sha256sum ${shellquote(fullpath)} 2>/dev/null | awk '{print $1}'`));
+			if (hash !== manifest[file].sha256) {
+				system(`rm -rf ${shellquote(RESTORE_TEST_DIR)}`);
+				return { result: false, error: `备份文件校验和不匹配: ${file}` };
+			}
+		}
+	}
+
+	system(`rm -rf ${shellquote(RESTORE_TEST_DIR)}`);
 	return { result: true };
 }
 
@@ -479,6 +535,22 @@ const methods = {
 			system(`rm -f ${shellquote(RESTORE_ARCHIVE)} /tmp/luci-indexcache.*`);
 			system('rm -rf /tmp/luci-modulecache/ 2>/dev/null');
 			system('/etc/init.d/homeproxy restart >/dev/null 2>&1');
+
+			// Verify service started successfully
+			sleep(2000);
+			let service_check = system('/etc/init.d/homeproxy status >/dev/null 2>&1');
+
+			if (service_check !== 0) {
+				// Service failed to start, rollback
+				let rollback_code = extractBackupArchive(ROLLBACK_ARCHIVE);
+				system('/sbin/uci commit homeproxy');
+				system('/etc/init.d/homeproxy restart >/dev/null 2>&1');
+
+				if (rollback_code === 0)
+					return { result: false, error: '恢复后服务启动失败，已自动回滚', rollback: ROLLBACK_ARCHIVE };
+
+				return { result: false, error: '恢复后服务启动失败且自动回滚失败', rollback: ROLLBACK_ARCHIVE };
+			}
 
 			return {
 				result: true,
