@@ -153,20 +153,6 @@ find /etc/homeproxy /etc/config -name "*.apk-new" -exec rm -f {} \; 2>/dev/null 
 /etc/init.d/homeproxy restart
 ```
 
-## 验证
-
-安装后可执行：
-
-```sh
-apk list -I | grep -E '^(homeproxy-custom|luci-app-homeproxy)'
-ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
-sing-box check -c /var/run/homeproxy/sing-box-c.json
-/etc/init.d/homeproxy status
-sleep 2
-ubus call luci.homeproxy connection_check '{"site":"google"}'
-ubus call luci.homeproxy backup_create
-```
-
 ## 给开发者 / AI 的维护说明
 
 只看本 README 应该能完成一次新功能开发和发布。当前自定义版主要涉及下面几类文件：
@@ -249,22 +235,6 @@ curl -fsSL https://api.github.com/repos/itv3/homeproxy/releases/latest \
   | jq -r '.tag_name, .assets[].name, .assets[].digest'
 ```
 
-### 路由器实机验证
-
-推荐至少验证一次安装和服务状态：
-
-```sh
-wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
-apk list -I | grep -E '^(homeproxy-custom|luci-app-homeproxy)'
-find /etc/homeproxy /etc/config -name "*.apk-new" -print
-ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
-sing-box check -c /var/run/homeproxy/sing-box-c.json
-/etc/init.d/homeproxy status
-sleep 2
-ubus call luci.homeproxy connection_check '{"site":"google"}'
-ubus call luci.homeproxy backup_create
-```
-
 ## HomeProxy 上游更新后怎么办
 
 不要直接用上游包覆盖本自定义包。上游更新提醒由 `.github/workflows/check-upstream.yml` 负责：
@@ -322,18 +292,6 @@ node --check htdocs/luci-static/resources/view/homeproxy/client.js
 node --check htdocs/luci-static/resources/view/homeproxy/node.js
 ```
 
-如果能连接路由器，可把 ucode 脚本放到 `/tmp` 做编译检查，注意只编译不要替换线上文件：
-
-```sh
-ssh root@192.168.9.1 'mkdir -p /tmp/homeproxy-check'
-ssh root@192.168.9.1 'cat > /tmp/homeproxy-check/homeproxy.uc' < root/etc/homeproxy/scripts/homeproxy.uc
-ssh root@192.168.9.1 'cat > /tmp/homeproxy-check/generate_client.uc' < root/etc/homeproxy/scripts/generate_client.uc
-ssh root@192.168.9.1 'cat > /tmp/homeproxy-check/migrate_config.uc' < root/etc/homeproxy/scripts/migrate_config.uc
-ssh root@192.168.9.1 'ucode -L /tmp/homeproxy-check -c -o /tmp/homeproxy-check/generate_client.uc.out /tmp/homeproxy-check/generate_client.uc'
-ssh root@192.168.9.1 'ucode -L /tmp/homeproxy-check -c -o /tmp/homeproxy-check/migrate_config.uc.out /tmp/homeproxy-check/migrate_config.uc'
-ssh root@192.168.9.1 'rm -rf /tmp/homeproxy-check'
-```
-
 ### 3. 推送并等待自动构建
 
 ```sh
@@ -360,21 +318,6 @@ git push origin "$TAG"
 ```sh
 curl -fsSL https://api.github.com/repos/itv3/homeproxy/releases/latest \
   | jq -r '.tag_name, .assets[].name, .assets[].digest'
-```
-
-### 5. 路由器验证
-
-新版 Release 完成后，在路由器上重新安装并验证：
-
-```sh
-wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
-apk list -I | grep -E '^(homeproxy-custom|luci-app-homeproxy)'
-find /etc/homeproxy /etc/config -name "*.apk-new" -print
-ucode -L "/etc/homeproxy/scripts/*.uc" /etc/homeproxy/scripts/generate_client.uc
-sing-box check -c /var/run/homeproxy/sing-box-c.json
-/etc/init.d/homeproxy status
-sleep 2
-ubus call luci.homeproxy connection_check '{"site":"google"}'
 ```
 
 如果上游更新提醒 Issue 还开着，确认自定义分支已经包含上游最新版后，可以关闭该 Issue。
