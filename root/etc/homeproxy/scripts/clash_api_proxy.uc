@@ -518,6 +518,10 @@ function upstreamRequest(method, path, request, body) {
 	return join("\r\n", headers) + "\r\n\r\n" + body;
 }
 
+// Synchronous upstream fetch for filtered responses
+// NOTE: This blocks the event loop. Only used for /proxies and /group/*/delay paths.
+// Regular relay paths use async event-driven forwarding.
+// TODO: Convert to async uloop-based implementation to avoid blocking.
 function fetchUpstream(method, path, request, body) {
 	let upstream = socket.connect(target.host, target.port, null, 3000);
 
@@ -531,6 +535,8 @@ function fetchUpstream(method, path, request, body) {
 		return null;
 	}
 
+	// Limit iterations to prevent long blocking
+	// Max 512 × 16KB = 8MB, should complete in < 1 second on LAN
 	for (let i = 0; i < 512; i++) {
 		let chunk = upstream.recv(16384);
 

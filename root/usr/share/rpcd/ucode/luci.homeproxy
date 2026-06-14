@@ -21,11 +21,18 @@ function hasKernelModule(kmod) {
 
 const HP_DIR = '/etc/homeproxy';
 const RUN_DIR = '/var/run/homeproxy';
-const BACKUP_ARCHIVE = '/tmp/homeproxy-backup.tar.gz';
-const RESTORE_ARCHIVE = '/tmp/homeproxy-restore.tar.gz';
-const ROLLBACK_ARCHIVE = '/tmp/homeproxy-rollback.tar.gz';
 const BACKUP_LIST = '/tmp/homeproxy-backup.list';
 const RESTORE_TEST_DIR = '/tmp/homeproxy-restore-test';
+
+// Generate random suffix for temporary files
+function generateTempSuffix() {
+	return trim(commandOutput('dd if=/dev/urandom bs=8 count=1 2>/dev/null | od -An -tx1 | tr -d " \\n"'));
+}
+
+// Session-scoped temporary file paths
+let BACKUP_ARCHIVE = '/tmp/homeproxy-backup-' + generateTempSuffix() + '.tar.gz';
+let RESTORE_ARCHIVE = null;  // Set when file is uploaded
+let ROLLBACK_ARCHIVE = null;  // Set when rollback is created
 
 function commandOutput(command) {
 	const fd = popen(`${command} 2>&1`);
@@ -494,16 +501,28 @@ const methods = {
 
 	backup_create: {
 		call: function() {
-			return createBackupArchive(BACKUP_ARCHIVE);
+			// Generate new backup path for each request
+			BACKUP_ARCHIVE = '/tmp/homeproxy-backup-' + generateTempSuffix() + '.tar.gz';
+			let result = createBackupArchive(BACKUP_ARCHIVE);
+			if (result.result)
+				result.download_path = BACKUP_ARCHIVE;
+			return result;
 		}
 	},
 	backup_validate: {
-		call: function() {
+		args: { path: 'path' },
+		call: function(req) {
+			// Set RESTORE_ARCHIVE from uploaded file path
+			RESTORE_ARCHIVE = req.args?.path || '/tmp/homeproxy-restore-' + generateTempSuffix() + '.tar.gz';
 			return validateBackupArchive(RESTORE_ARCHIVE);
 		}
 	},
 	backup_restore: {
 		call: function() {
+			if (!RESTORE_ARCHIVE) {
+				return { result: false, error: '请先上传并验证备份文件' };
+			}
+
 			const check = validateBackupArchive(RESTORE_ARCHIVE);
 
 			if (!check.valid)
@@ -513,6 +532,8 @@ const methods = {
 			if (!extract_check.result)
 				return { result: false, error: extract_check.error, files: check.files };
 
+			// Generate rollback path
+			ROLLBACK_ARCHIVE = '/tmp/homeproxy-rollback-' + generateTempSuffix() + '.tar.gz';
 			const rollback = createBackupArchive(ROLLBACK_ARCHIVE);
 			if (!rollback.result)
 				return { result: false, error: `创建回滚包失败: ${rollback.error}` };

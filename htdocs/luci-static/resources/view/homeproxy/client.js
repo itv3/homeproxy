@@ -17,6 +17,60 @@
 'require tools.firewall as fwtool';
 'require tools.widgets as widgets';
 
+// Form field factory functions
+const fieldFactory = {
+	uintField(section, name, label, placeholder, depends) {
+		let field = section.option(form.Value, name, label);
+		field.datatype = 'uinteger';
+		if (placeholder) field.placeholder = placeholder;
+		if (depends) field.depends(depends);
+		field.modalonly = true;
+		return field;
+	},
+
+	portField(section, name, label, placeholder, depends) {
+		let field = section.option(form.Value, name, label);
+		field.datatype = 'port';
+		if (placeholder) field.placeholder = placeholder;
+		if (depends) field.depends(depends);
+		field.modalonly = true;
+		return field;
+	},
+
+	stringField(section, name, label, placeholder, depends) {
+		let field = section.option(form.Value, name, label);
+		if (placeholder) field.placeholder = placeholder;
+		if (depends) field.depends(depends);
+		field.modalonly = true;
+		return field;
+	},
+
+	listField(section, name, label, choices, depends) {
+		let field = section.option(form.ListValue, name, label);
+		for (let key in choices)
+			field.value(key, choices[key]);
+		if (depends) field.depends(depends);
+		field.modalonly = true;
+		return field;
+	},
+
+	flagField(section, name, label, depends) {
+		let field = section.option(form.Flag, name, label);
+		if (depends) field.depends(depends);
+		field.modalonly = true;
+		return field;
+	},
+
+	dynamicListField(section, name, label, datatype, placeholder, depends) {
+		let field = section.option(form.DynamicList, name, label);
+		if (datatype) field.datatype = datatype;
+		if (placeholder) field.placeholder = placeholder;
+		if (depends) field.depends(depends);
+		field.modalonly = true;
+		return field;
+	}
+};
+
 const callServiceList = rpc.declare({
 	object: 'service',
 	method: 'list',

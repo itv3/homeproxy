@@ -10,8 +10,9 @@
 'require ui';
 'require view';
 
-const backupPath = '/tmp/homeproxy-backup.tar.gz';
-const restorePath = '/tmp/homeproxy-restore.tar.gz';
+// Session state for dynamic paths
+let currentBackupPath = null;
+let currentRestorePath = null;
 
 const callBackupCreate = rpc.declare({
 	object: 'luci.homeproxy',
@@ -22,6 +23,7 @@ const callBackupCreate = rpc.declare({
 const callBackupValidate = rpc.declare({
 	object: 'luci.homeproxy',
 	method: 'backup_validate',
+	params: ['path'],
 	expect: { '': {} }
 });
 
@@ -70,9 +72,14 @@ return view.extend({
 			if (!res.result)
 				throw new Error(res.error || _('生成备份文件失败。'));
 
+			// Save the backup path for downloading
+			currentBackupPath = res.download_path || res.path;
+			if (!currentBackupPath)
+				throw new Error(_('未返回备份文件路径。'));
+
 			const filename = 'homeproxy-backup-%s.tar.gz'.format((new Date()).toISOString().replace(/[:.]/g, '-'));
 
-			return downloadFile(backupPath, filename).then(() => {
+			return downloadFile(currentBackupPath, filename).then(() => {
 				ui.addNotification(null, E('p', _('备份文件已生成并开始下载。')), 'info');
 			});
 		}).catch((err) => {
@@ -87,9 +94,12 @@ return view.extend({
 
 		setButtonText(btn, _('正在上传备份文件...'));
 
-		return ui.uploadFile(restorePath).then(() => {
+		// Generate random restore path
+		currentRestorePath = '/tmp/homeproxy-restore-' + Math.random().toString(36).substring(2, 15) + '.tar.gz';
+
+		return ui.uploadFile(currentRestorePath).then(() => {
 			setButtonText(btn, _('正在检查备份文件...'));
-			return L.resolveDefault(callBackupValidate(), {});
+			return L.resolveDefault(callBackupValidate(currentRestorePath), {});
 		}).then((res) => {
 			if (!res.valid)
 				throw new Error(res.error || _('上传的备份文件无效。'));
@@ -101,7 +111,7 @@ return view.extend({
 					E('button', {
 						'class': 'btn',
 						'click': ui.createHandlerFn(this, () => {
-							return fs.remove(restorePath).finally(ui.hideModal);
+							return fs.remove(currentRestorePath).finally(ui.hideModal);
 						})
 					}, [ _('取消') ]),
 					' ',
@@ -113,7 +123,7 @@ return view.extend({
 			]);
 		}).catch((err) => {
 			ui.addNotification(null, E('p', err.message || err));
-			return fs.remove(restorePath).catch(() => {});
+			return fs.remove(currentRestorePath).catch(() => {});
 		}).finally(() => {
 			setButtonText(btn, _('上传备份文件...'));
 		});
