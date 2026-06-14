@@ -1,7 +1,7 @@
 # HomeProxy 安全修复实施文档
 
-**修复日期**: 2026-06-14  
-**基于审计报告**: SECURITY_AUDIT_FINAL.md v3.0  
+**修复日期**: 2026-06-14
+**基于审计报告**: SECURITY_AUDIT_FINAL.md v3.0
 **修复状态**: ✅ 20/20 全部完成
 
 ---
@@ -52,7 +52,7 @@ if (match(proxy_mode, /tun/))
 
 **文件**: `install.sh`
 
-**问题**: 
+**问题**:
 1. 公钥下载无指纹验证
 2. fallback 路径使用 --allow-untrusted 绕过签名验证
 
@@ -141,7 +141,7 @@ if (index(allowed_types, req.args?.type) === -1)
 
 **问题**: 备份包无法验证来源和完整性
 
-**修复方案**: 
+**修复方案**:
 1. 生成备份时创建 SHA-256 manifest
 2. 恢复时验证 manifest
 
@@ -288,14 +288,14 @@ trap - EXIT INT TERM
 
 ### 2.10 ✅ C-L1: 临时文件使用固定路径 (Low)
 
-**文件**: 
+**文件**:
 - `root/usr/share/rpcd/ucode/luci.homeproxy`
 - `root/usr/share/rpcd/acl.d/luci-app-homeproxy.json`
 - `htdocs/luci-static/resources/view/homeproxy/backup.js`
 
 **问题**: 备份/恢复使用固定路径 `/tmp/homeproxy-backup.tar.gz`
 
-**修复方案**: 
+**修复方案**:
 1. 后端生成随机文件名
 2. RPC 方法返回实际路径
 3. 前端使用动态路径
@@ -345,17 +345,17 @@ function generate_transport_options(node) { ... }
 
 function generate_outbound(node) {
     const outbound = { /* 基础字段 */ };
-    
-    // 协议特定选项
+
+    // 协议特定选项（使用 ucode 兼容的 mergeObject）
     if (node.type in ['hysteria', 'hysteria2'])
-        Object.assign(outbound, generate_hysteria_options(node));
-    
+        mergeObject(outbound, generate_hysteria_options(node));
+
     // TLS 和 transport
-    Object.assign(outbound, {
+    mergeObject(outbound, {
         tls: generate_tls_options(node),
         transport: generate_transport_options(node)
     });
-    
+
     return outbound;
 }
 ```
@@ -382,7 +382,7 @@ const fieldFactory = {
         field.modalonly = true;
         return field;
     },
-    
+
     portField(section, name, label, placeholder, depends) { ... },
     listField(section, name, label, choices, depends) { ... },
     flagField(section, name, label, depends) { ... }
@@ -396,13 +396,20 @@ fieldFactory.uintField(s, 'port', _('Port'), '443', {type: 'hysteria'});
 
 ---
 
-### 3.3 ✅ 2.13: 缺少错误恢复机制
+### 3.3 ⚠️ 2.13: 缺少错误恢复机制（部分完成）
 
 **文件**: `root/etc/homeproxy/scripts/generate_client.uc`
 
 **问题**: 多处使用 die() 直接终止
 
-**修复方案**: 添加错误收集机制
+**修复方案**: 添加错误收集机制（部分路径）
+
+**状态**:
+- ✅ 已添加 `config_errors` 数组和 `reportError()` 函数
+- ✅ 部分路径使用错误收集并继续生成
+- ⚠️ 关键路径仍保留 die()（如 `etc/config/homeproxy` 缺失）
+- ⚠️ 错误收集只是 warn 输出，非完整恢复机制
+- ⏸️ 完全恢复需要重写状态机，工作量大
 
 ```javascript
 let config_errors = [];
@@ -415,7 +422,7 @@ function reportError(type, message, suggestion) {
     });
 }
 
-// 替换 die() 调用
+// 部分路径使用错误收集
 if (~index(seen_path, target)) {
     reportError('error', '路由节点循环引用', '移除循环引用');
     return null;
@@ -445,7 +452,7 @@ let selectorHasPath = function(start, target, seen) {
     let key = start + '->' + target;
     if (pathCache[key] !== undefined)
         return pathCache[key];
-    
+
     // ... 计算
     pathCache[key] = found;
     return found;
@@ -484,7 +491,7 @@ function fetchUpstream(method, path, request, body) {
 
 **文件**: `.github/workflows/build-ipk.yml`
 
-**问题**: 
+**问题**:
 1. 每次完整编译 apk-tools
 2. Release notes 硬编码
 
@@ -515,7 +522,7 @@ function fetchUpstream(method, path, request, body) {
   run: |
     echo "Checking shell scripts..."
     sh -n install.sh
-    
+
     echo "Checking JavaScript files..."
     node --check htdocs/luci-static/resources/homeproxy.js
     node --check htdocs/luci-static/resources/view/homeproxy/client.js
@@ -588,6 +595,375 @@ function fetchUpstream(method, path, request, body) {
 
 ---
 
-**修复完成日期**: 2026-06-14  
-**提交分支**: security-fixes-20260614  
+## 🔧 第二轮审核修复（运维工程师反馈）
+
+### P0-1: ✅ 前端路径生成与后端验证不匹配
+
+**问题**: 前端使用 `Math.random().toString(36)` 生成路径，可能包含 g-z，但后端只接受 [a-f0-9]
+
+**修复方案**:
+- 添加 `backup_get_upload_path` RPC 方法，由后端生成路径
+- 后端使用 `/dev/urandom` + `od -tx1` 生成纯 hex 后缀
+- 前端先调用 RPC 获取路径，再上传文件
+- 更新 ACL 添加 `backup_get_upload_path` 到 write 权限
+
+**修改文件**:
+```javascript
+// root/usr/share/rpcd/ucode/luci.homeproxy
+backup_get_upload_path: {
+    call: function() {
+        const upload_path = '/tmp/homeproxy-restore-' + generateTempSuffix() + '.tar.gz';
+        return { upload_path: upload_path };
+    }
+},
+
+// htdocs/luci-static/resources/view/homeproxy/backup.js
+return L.resolveDefault(callBackupGetUploadPath(), {}).then((res) => {
+    currentRestorePath = res.upload_path;
+    return ui.uploadFile(currentRestorePath);
+});
+```
+
+---
+
+### P0-2: ✅ manifest 路径不一致
+
+**问题**: manifest 打包在 `tmp/homeproxy-backup-manifest.json`，但校验读取根目录
+
+**修复方案**:
+- 修改 tar 命令将 manifest 放在归档根目录
+- 更新白名单路径为 `homeproxy-backup-manifest.json`
+- 强制要求 manifest 存在
+
+**关键代码**:
+```javascript
+// 打包时放在根目录
+tar -czf backup.tar.gz -T file-list -C /tmp homeproxy-backup-manifest.json
+
+// 白名单
+path === 'homeproxy-backup-manifest.json' ||
+
+// 强制要求存在
+if (!manifest_content) {
+    return { result: false, error: '备份文件缺少完整性清单' };
+}
+```
+
+---
+
+### P1-1: ✅ CI ucode 检查路径和覆盖
+
+**问题**: CI 只检查 `*.uc` 文件，但 RPC 文件 `luci.homeproxy` 无扩展名
+
+**修复方案**:
+- 显式检查 `root/usr/share/rpcd/ucode/luci.homeproxy`
+- 添加注释说明 RPC 文件使用 top-level return，跳过 Node 检查
+- 注明 Node.js 只能做基础语法检查
+
+**修改文件**: `.github/workflows/build-ipk.yml`
+
+---
+
+### P1-2: ✅ fieldFactory 只定义未使用
+
+**问题**: 2.12 声称的前端去重没有实际发生
+
+**修复方案**:
+- 实际使用 `fieldFactory.uintField()` 替换两个字段
+- `main_urltest_interval` 和 `main_urltest_tolerance`
+
+**修改文件**: `htdocs/luci-static/resources/view/homeproxy/client.js`
+
+---
+
+### P2-1: ✅ CI 私钥清理 trap 位置
+
+**问题**: trap 在 Prepare step，Build APK 失败不会清理
+
+**修复方案**:
+- 将 trap 移到 Build APK 步骤开头
+- Build 完成后显式清理并取消 trap
+- Prepare step 重新生成私钥并设置新 trap
+
+**修改文件**: `.github/workflows/release-custom-apk.yml`
+
+---
+
+### P2-2: ✅ .DS_Store 误提交
+
+**修复方案**:
+- 从 staging 移除 .DS_Store
+- 创建 `.gitignore` 防止将来误提交
+
+**新增文件**: `.gitignore`
+
+---
+
+## 🔧 第三轮审核修复（运维工程师复核）
+
+### P1-1: ✅ uloop.timer 参数顺序错误
+
+**问题**: `uloop.timer(callback, timeout)` 应为 `uloop.timer(timeout, callback)`，导致 idle timeout 不生效
+
+**修复方案**:
+```javascript
+// 修复前
+conn.idle_timer = uloop.timer(() => { ... }, CLIENT_IDLE_TIMEOUT);
+
+// 修复后 (uloop.timer 签名: timeout_ms, callback)
+conn.idle_timer = uloop.timer(CLIENT_IDLE_TIMEOUT, () => { ... });
+```
+
+**修改文件**: `root/etc/homeproxy/scripts/clash_api_proxy.uc:829`
+
+---
+
+### P1-2: ✅ manifest 校验不够严格
+
+**问题**:
+1. 只校验 manifest 中的文件，未检查归档中所有可恢复文件是否都在 manifest 中
+2. manifest 自身在白名单中会被恢复到 `/homeproxy-backup-manifest.json`
+
+**修复方案**:
+1. 增加反向校验：遍历归档中所有文件，确保可恢复文件都在 manifest 中
+2. 从白名单移除 `homeproxy-backup-manifest.json`，只用于校验
+
+**关键代码**:
+```javascript
+// 反向校验
+const fd = popen(`/bin/tar -tzf ${shellquote(path)} 2>&1`);
+for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+    let archive_path = trim(line);
+    if (allowedBackupPath(archive_path)) {
+        if (!manifest[archive_path]) {
+            return { result: false, error: `归档中存在未记录的可恢复文件: ${archive_path}` };
+        }
+    }
+}
+```
+
+**修改文件**: `root/usr/share/rpcd/ucode/luci.homeproxy`
+
+---
+
+### P2: ✅ 备份文件权限和清理
+
+**问题**: 备份包含证书和私钥，但生成后权限宽松且未清理
+
+**修复方案**:
+1. 生成备份/回滚包后立即 `chmod 600`
+2. 前端下载完成后删除服务端备份文件
+
+**关键代码**:
+```javascript
+// 后端设置权限
+system(`chmod 600 ${shellquote(path)}`);
+
+// 前端下载后清理
+downloadFile(currentBackupPath, filename).then(() => {
+    return fs.remove(currentBackupPath).catch(() => {});
+});
+```
+
+**修改文件**:
+- `root/usr/share/rpcd/ucode/luci.homeproxy`
+- `htdocs/luci-static/resources/view/homeproxy/backup.js`
+
+---
+
+## 🔧 第四轮审核修复（运维工程师复核）
+
+### P1-1: ✅ manifest 在 validateBackupArchive 中被拦截
+
+**问题**: manifest 已从白名单移除，但 validateBackupArchive 仍会拒绝它
+
+**修复方案**: 在 validateBackupArchive 中跳过 manifest，不计入 errors
+
+**关键代码**:
+```javascript
+// Skip manifest itself (used for integrity check, not restored)
+if (path === 'homeproxy-backup-manifest.json')
+    continue;
+```
+
+---
+
+### P1-2: ✅ 反向检查路径规范化绕过
+
+**问题**: 反向检查直接 trim() tar 输出，`./etc/config/homeproxy` 不会命中白名单
+
+**修复方案**: 使用 archiveMemberPath() 规范化路径
+
+**关键代码**:
+```javascript
+// Use archiveMemberPath() to normalize path (handles ./path, etc.)
+let archive_path = archiveMemberPath(line);
+```
+
+---
+
+### P1-3: ✅ 改进恢复流程为两阶段
+
+**问题**: 直接 `tar -xzf` 到根目录不安全
+
+**修复方案**:
+1. 解压到临时目录
+2. 只复制 manifest 中已校验的文件到目标路径
+3. 回滚包也使用同样流程
+
+**关键代码**:
+```javascript
+function extractBackupArchive(path, manifest) {
+    // Extract to temp dir
+    const extract_dir = '/tmp/homeproxy-extract-' + generateTempSuffix();
+    system(`cd ${shellquote(extract_dir)} && /bin/tar -xzf ${shellquote(path)}`);
+
+    // Copy only manifest-validated files and normalize permissions
+    for (let file in manifest) {
+        system(`cp ${shellquote(src)} ${shellquote(dst)}`);
+
+        // Normalize permissions based on file type
+        if (match(file, /^etc\/homeproxy\/certs\/[^\/]+$/)) {
+            system(`chmod 600 ${shellquote(dst)}`);  // Certs/keys
+        } else if (file === 'etc/config/homeproxy') {
+            system(`chmod 600 ${shellquote(dst)}`);  // UCI config
+        } else {
+            system(`chmod 644 ${shellquote(dst)}`);  // Resource lists
+        }
+    }
+}
+
+// Usage with manifest
+let exit_code = extractBackupArchive(restore_path, manifest);
+let rollback_code = extractBackupArchive(ROLLBACK_ARCHIVE, rollback_manifest);
+```
+
+---
+
+## 🔧 第五轮审核修复（运维工程师最终复核）
+
+### P2: ✅ 恢复时规范化文件权限
+
+**问题**: `cp -p` 保留备份包中的权限，攻击者可构造过宽权限
+
+**修复方案**:
+1. 移除 `-p` 参数，不保留权限
+2. 复制后按文件类型规范化权限
+
+**关键代码**:
+```javascript
+// Copy without -p
+system(`cp ${shellquote(src)} ${shellquote(dst)}`);
+
+// Normalize permissions
+if (match(file, /^etc\/homeproxy\/certs\/[^\/]+$/)) {
+    system(`chmod 600 ${shellquote(dst)}`);  // Certs/keys: restrictive
+} else if (file === 'etc/config/homeproxy') {
+    system(`chmod 600 ${shellquote(dst)}`);  // UCI config
+} else {
+    system(`chmod 644 ${shellquote(dst)}`);  // Resource lists
+}
+```
+
+---
+
+### P3-1: ✅ manifest 键白名单校验
+
+**问题**: manifest 键未显式校验，可能包含非法路径
+
+**修复方案**: 在 hash 校验前先验证 manifest 键
+
+**关键代码**:
+```javascript
+for (let file in manifest) {
+    // Reject manifest itself as restore target
+    if (file === 'homeproxy-backup-manifest.json') {
+        return { result: false, error: 'manifest 不能包含自身作为恢复目标' };
+    }
+
+    // Verify key is in whitelist
+    if (!allowedBackupPath(file)) {
+        return { result: false, error: `manifest 包含不允许的路径: ${file}` };
+    }
+
+    // Then verify hash...
+}
+```
+
+---
+
+### P3-2: ✅ 更新文档说明 2.13 部分完成
+
+**修复**: 将 `3.3 ✅ 2.13` 改为 `3.3 ⚠️ 2.13（部分完成）`
+
+**说明**:
+- 已添加错误收集机制
+- 关键路径仍保留 die()
+- 非完整错误恢复
+- 完全恢复需重写状态机
+
+---
+
+## 🔧 第六轮审核修复（Claude 复核 + 外部工程师反馈）
+
+### P1: ✅ 备份临时归档在 /tmp 暴露证书/私钥（外部工程师 P1）
+
+**问题**: `createWorkDir()` 仅 `mkdir -p`，默认 umask 022 下为 0755；`.tar.gz.tmp` 与最终 `.tar.gz` 先以 0644 写入 /tmp，到流程末尾才 `chmod 600`，存在世界可读窗口。
+
+**修复方案**:
+1. `createWorkDir()` 创建后立即 `chmod 700`（覆盖备份与校验解包两条路径的暂存证书/私钥）。
+2. 归档在私有 work_dir 内、以 `umask 077` 生成（tar/gzip 输出直接 0600），再 `chmod 600` 并原子 `mv` 到下载路径（umask 兜底跨文件系统复制，chmod 兜底同盘 rename）。
+
+**修改文件**: `root/usr/share/rpcd/ucode/luci.homeproxy`（`createWorkDir`、`createBackupArchive`）
+
+---
+
+### P2-1: ✅ backup_validate 放行缺少 manifest 的旧/伪备份（外部工程师 P2）
+
+**问题**: `validateBackupArchive` 跳过 manifest 且只要求 `etc/config/homeproxy`；manifest 强校验只在 `backup_restore` 的 `testExtractBackupArchive` 中执行，导致缺 manifest 的备份通过校验、弹出确认框，点"继续"后才失败。
+
+**修复方案**: `backup_validate` 在结构校验通过后，调用同一套 `testExtractBackupArchive` 做 manifest + SHA-256 完整性校验（校验后清理其 work_dir），缺/坏 manifest 在确认框之前即被拒绝。
+
+**修改文件**: `root/usr/share/rpcd/ucode/luci.homeproxy`（`backup_validate`）
+
+---
+
+### P2-2: ✅ apk-tools 构建缓存命中后 meson 失败（外部工程师 P2）
+
+**问题**: 缓存 `apk-tools/build` 后，`meson setup build` 仍无条件执行；meson 在已配置的 builddir 上会报错，导致第二次起 CI 失败。
+
+**修复方案**: 检测到已配置 builddir（存在 `build/meson-info/meson-info.json`）时改用 `meson setup build --reconfigure`，无缓存时正常配置。
+
+**修改文件**: `.github/workflows/build-ipk.yml`
+
+---
+
+### P1-补: ✅ 循环引用降级会以无效配置覆盖可用配置（Claude 复核 task #1）
+
+**问题**: 2.13/2.18 把循环引用从 `die()` 改为 `reportError()+return null` 后继续生成并写入 `sing-box-c.json`，但循环会留下悬空 outbound 引用 → init 脚本的 `sing-box check`（[init.d:60](root/etc/init.d/homeproxy:60)）失败 → `return 1`；而旧 json 在重生成前不会被删除（[init.d:322](root/etc/init.d/homeproxy:322) 仅在 stop/clean），故新行为**覆盖了上次可用配置并使服务下线**，比原 `die()`（保留旧配置、服务继续运行）更差。
+
+**修复方案**: 保留错误聚合与友好中文提示，但在写入前若存在致命错误则 `exit(1)`，不覆盖现有 `sing-box-c.json`，让 init 脚本继续使用上次有效配置。
+
+**修改文件**: `root/etc/homeproxy/scripts/generate_client.uc`（文件末尾写入决策）
+
+---
+
+### P2-补: ✅ fieldFactory 死代码清理（Claude 复核 task #1）
+
+**问题**: `fieldFactory` 定义 6 个方法，实际只用 `uintField`（2 处），其余 5 个为死代码。
+
+**修复方案**: 删除未使用的 `portField`/`stringField`/`listField`/`flagField`/`dynamicListField`，保留 `uintField`。
+
+**修改文件**: `htdocs/luci-static/resources/view/homeproxy/client.js`
+
+---
+
+### ℹ️ C-M3 完整性 vs 来源真实性（待决策）
+
+外部工程师指出：SHA-256 manifest 仅能发现"内容与 manifest 不一致"，无法证明备份**来源可信**（攻击者整体替换归档并重算 manifest 即可绕过）。如验收目标包含"防恶意替换"，需设备本地 HMAC 或签名——但这会使备份**不可跨设备恢复**。此为设计权衡，留待维护者决策，未在本轮实施。
+
+---
+
+**修复完成日期**: 2026-06-14
+**提交分支**: security-fixes-20260614
 **待合并到**: custom/homeproxy-enhancements

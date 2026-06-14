@@ -1,9 +1,9 @@
 # HomeProxy 安全审计与优化报告 v3.0 (最终版)
 
-**审计日期**: 2026-06-14  
-**审计方法**: 独立核查 + 对抗式复核 + 同类模式扫描  
-**审计人员**: Claude Code AI + 第三方安全工程师  
-**工作流**: 25 个独立代理 × 30 分钟深度核查  
+**审计日期**: 2026-06-14
+**审计方法**: 独立核查 + 对抗式复核 + 同类模式扫描
+**审计人员**: Claude Code AI + 第三方安全工程师
+**工作流**: 25 个独立代理 × 30 分钟深度核查
 
 ---
 
@@ -24,11 +24,11 @@
 
 ## 1.1 🔴 U-H1: sing-box generate 命令注入（RCE）
 
-**严重程度**: 🔴 Critical  
-**CVSS 评分**: 9.8  
-**文件**: `root/usr/share/rpcd/ucode/luci.homeproxy:501`  
-**来源**: immortalwrt/homeproxy (上游)  
-**发现者**: 第三方安全工程师  
+**严重程度**: 🔴 Critical
+**CVSS 评分**: 9.8
+**文件**: `root/usr/share/rpcd/ucode/luci.homeproxy:501`
+**来源**: immortalwrt/homeproxy (上游)
+**发现者**: 第三方安全工程师
 **核查状态**: ✅ 已独立验证
 
 ### 漏洞描述
@@ -72,11 +72,11 @@ const fd = popen('/usr/bin/sing-box generate ' + type + ' ' + shellquote(req.arg
 
 ## 1.2 🟡 U-H2: tproxy/tun 参数初始化条件写法错误
 
-**严重程度**: 🟡 Low  
-**类型**: 代码正确性 / 潜在功能隐患  
-**文件**: `root/etc/homeproxy/scripts/generate_client.uc:125, 128`  
-**来源**: immortalwrt/homeproxy (上游)  
-**作者**: Tianling Shen (2023-02-14)  
+**严重程度**: 🟡 Low
+**类型**: 代码正确性 / 潜在功能隐患
+**文件**: `root/etc/homeproxy/scripts/generate_client.uc:125, 128`
+**来源**: immortalwrt/homeproxy (上游)
+**作者**: Tianling Shen (2023-02-14)
 **核查状态**: ✅ 已在目标路由器 ucode 解释器验证
 
 ### 问题代码
@@ -84,7 +84,7 @@ const fd = popen('/usr/bin/sing-box generate ' + type + ' ' + shellquote(req.arg
 // line 125
 if (match(proxy_mode), /tproxy/)  // ❌ 括号位置错误，条件恒真
 
-// line 128  
+// line 128
 if (match(proxy_mode), /tun/)     // ❌ 括号位置错误，条件恒真
 ```
 
@@ -123,9 +123,9 @@ if (match(proxy_mode, /tun/))     // line 128
 
 ## 2.1 🟠 C-H1: 安装脚本信任链不完整，fallback 路径绕过 APK 签名验证
 
-**严重程度**: 🟠 Medium  
-**CVSS 评分**: 5.5-6.0  
-**文件**: `install.sh:32, 45`  
+**严重程度**: 🟠 Medium
+**CVSS 评分**: 5.5-6.0
+**文件**: `install.sh:32, 45`
 **核查状态**: ✅ 已验证 + 原 High 定级偏高
 
 ### 问题代码
@@ -169,14 +169,14 @@ fi
 # 2. 修复 install_direct_apk
 install_direct_apk() {
     wget -O "$TMP_APK" "$URL" || return 1
-    
+
     # 验证签名
     if ! apk verify --keys-dir /etc/apk/keys "$TMP_APK" 2>&1; then
         echo "error: APK signature verification failed" >&2
         rm -f "$TMP_APK"
         return 1
     fi
-    
+
     apk add --upgrade "$TMP_APK"  # 移除 --allow-untrusted
 }
 ```
@@ -188,9 +188,9 @@ install_direct_apk() {
 
 ## 2.2 🟠 C-M1: RPC ACL 通配符导致读权限用户可调用敏感方法
 
-**严重程度**: 🟠 Medium  
-**CVSS 评分**: 6.5  
-**文件**: `root/usr/share/rpcd/acl.d/luci-app-homeproxy.json:14`  
+**严重程度**: 🟠 Medium
+**CVSS 评分**: 6.5
+**文件**: `root/usr/share/rpcd/acl.d/luci-app-homeproxy.json:14`
 **核查状态**: ✅ 已验证；原报告 Medium 定级更符合默认场景
 
 ### 问题代码
@@ -267,8 +267,8 @@ install_direct_apk() {
 
 ## 2.3 🟡 C-M3: 备份包缺少来源/完整性校验
 
-**严重程度**: 🟡 Low / Defense-in-depth  
-**文件**: `backup.js:86-119`  
+**严重程度**: 🟡 Low / Defense-in-depth
+**文件**: `backup.js:86-119`
 **来源**: 自定义代码
 
 ### 核查结论
@@ -301,8 +301,8 @@ install_direct_apk() {
 
 ## 2.4 ℹ️ C-M6: CI 签名私钥临时文件加固（非漏洞）
 
-**严重程度**: ℹ️ Informational / optional hardening  
-**条件升级**: 若改用 self-hosted runner、保留失败工作区、开启交互式调试，或后续步骤上传/缓存整个工作区，可升至 Medium  
+**严重程度**: ℹ️ Informational / optional hardening
+**条件升级**: 若改用 self-hosted runner、保留失败工作区、开启交互式调试，或后续步骤上传/缓存整个工作区，可升至 Medium
 **文件**: `.github/workflows/release-custom-apk.yml:13, 67-78, 95-97`
 
 ### 核查结论
@@ -324,7 +324,7 @@ install_direct_apk() {
 
 ## 2.5 🟡 C-H2: Clash API 代理缺少应用层连接与请求资源上限
 
-**原报告声称**: API 无速率限制，可被 DoS 攻击（High 严重度）  
+**原报告声称**: API 无速率限制，可被 DoS 攻击（High 严重度）
 **核查后严重度**: 🟡 Low / hardening
 
 ### 核查结论
@@ -393,8 +393,8 @@ install_direct_apk() {
 
 ## 2.10 🟠 N-M1: resources_get_version 路径穿越导致受限文件读取
 
-**严重程度**: 🟠 Medium  
-**文件**: `root/usr/share/rpcd/ucode/luci.homeproxy:572`  
+**严重程度**: 🟠 Medium
+**文件**: `root/usr/share/rpcd/ucode/luci.homeproxy:572`
 **发现者**: 核查工作流
 
 ### 核查结论
@@ -536,7 +536,7 @@ function selectorHasPath(start, target, seen) {
 ---
 
 ## 2.15 💡 Clash API 代理部分过滤路径同步阻塞
-**位置**: `clash_api_proxy.uc:500-531`  
+**位置**: `clash_api_proxy.uc:500-531`
 **核查结论**: 描述基本准确，但范围应限定在 `fetchUpstream()` / group-delay fallback 等过滤路径；普通 relay 路径仍使用 uloop 事件驱动转发。
 
 **建议**: 将相关过滤路径改为异步处理，避免单次上游请求阻塞事件循环
@@ -547,7 +547,7 @@ function selectorHasPath(start, target, seen) {
 
 **核查结论**: 描述准确。当前 release workflow 固定 apk-tools commit、每次从源码编译，Release notes 也在 workflow 中硬编码；workflow 中没有 `actions/cache`。
 
-**问题**: 
+**问题**:
 - 依赖版本硬编码
 - 每次完整编译
 - Release notes 硬编码
@@ -679,8 +679,8 @@ NodeA 引用了 NodeB，而 NodeB 又引用回 NodeA
 
 ---
 
-**报告版本**: v3.0 (最终版)  
-**更新时间**: 2026-06-14  
-**审计方法**: 独立核查 + 对抗式复核 + 同类扫描  
-**工作量**: 25 个代理 × 30 分钟  
+**报告版本**: v3.0 (最终版)
+**更新时间**: 2026-06-14
+**审计方法**: 独立核查 + 对抗式复核 + 同类扫描
+**工作量**: 25 个代理 × 30 分钟
 **下次审计**: 高危修复完成后 1 周内复审

@@ -20,6 +20,19 @@ const callBackupCreate = rpc.declare({
 	expect: { '': {} }
 });
 
+const callBackupGetUploadPath = rpc.declare({
+	object: 'luci.homeproxy',
+	method: 'backup_get_upload_path',
+	expect: { '': {} }
+});
+
+const callBackupCleanup = rpc.declare({
+	object: 'luci.homeproxy',
+	method: 'backup_cleanup',
+	params: ['path'],
+	expect: { '': {} }
+});
+
 const callBackupValidate = rpc.declare({
 	object: 'luci.homeproxy',
 	method: 'backup_validate',
@@ -30,6 +43,7 @@ const callBackupValidate = rpc.declare({
 const callBackupRestore = rpc.declare({
 	object: 'luci.homeproxy',
 	method: 'backup_restore',
+	params: ['path'],
 	expect: { '': {} }
 });
 
@@ -81,6 +95,8 @@ return view.extend({
 
 			return downloadFile(currentBackupPath, filename).then(() => {
 				ui.addNotification(null, E('p', _('备份文件已生成并开始下载。')), 'info');
+				// Clean up server-side backup file after download (contains certificates and private keys)
+				return L.resolveDefault(callBackupCleanup(currentBackupPath), {});
 			});
 		}).catch((err) => {
 			ui.addNotification(null, E('p', err.message || err));
@@ -94,10 +110,15 @@ return view.extend({
 
 		setButtonText(btn, _('正在上传备份文件...'));
 
-		// Generate random restore path
-		currentRestorePath = '/tmp/homeproxy-restore-' + Math.random().toString(36).substring(2, 15) + '.tar.gz';
+		// Request upload path from backend
+		return L.resolveDefault(callBackupGetUploadPath(), {}).then((res) => {
+			if (!res.upload_path)
+				throw new Error(_('无法获取上传路径'));
 
-		return ui.uploadFile(currentRestorePath).then(() => {
+			currentRestorePath = res.upload_path;
+
+			return ui.uploadFile(currentRestorePath);
+		}).then(() => {
 			setButtonText(btn, _('正在检查备份文件...'));
 			return L.resolveDefault(callBackupValidate(currentRestorePath), {});
 		}).then((res) => {
@@ -111,7 +132,7 @@ return view.extend({
 					E('button', {
 						'class': 'btn',
 						'click': ui.createHandlerFn(this, () => {
-							return fs.remove(currentRestorePath).finally(ui.hideModal);
+							return L.resolveDefault(callBackupCleanup(currentRestorePath), {}).finally(ui.hideModal);
 						})
 					}, [ _('取消') ]),
 					' ',
@@ -123,7 +144,7 @@ return view.extend({
 			]);
 		}).catch((err) => {
 			ui.addNotification(null, E('p', err.message || err));
-			return fs.remove(currentRestorePath).catch(() => {});
+			return L.resolveDefault(callBackupCleanup(currentRestorePath), {});
 		}).finally(() => {
 			setButtonText(btn, _('上传备份文件...'));
 		});
@@ -134,7 +155,7 @@ return view.extend({
 			E('p', { 'class': 'spinning' }, _('正在应用备份文件并重启 HomeProxy。'))
 		]);
 
-		return L.resolveDefault(callBackupRestore(), {}).then((res) => {
+		return L.resolveDefault(callBackupRestore(currentRestorePath), {}).then((res) => {
 			if (!res.result)
 				throw new Error(res.error || _('恢复失败。'));
 

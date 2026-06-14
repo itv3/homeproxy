@@ -436,7 +436,6 @@ function closeConnection(conn) {
 
 	delete connections[conn.id];
 }
-}
 
 function isEmptyObject(value) {
 	return type(value) === 'object' && length(value) === 0;
@@ -659,11 +658,22 @@ function relayRead(conn, from, to) {
 		return;
 	}
 
+	// Reset idle timer on data activity
+	if (conn.idle_timer && length(received.data) > 0) {
+		conn.idle_timer.set(CLIENT_IDLE_TIMEOUT);
+	}
+
 	if (received.eof)
 		closeConnection(conn);
 }
 
 function setupRelay(conn) {
+	// Set idle timer for relay phase (30s idle timeout)
+	conn.idle_timer = uloop.timer(CLIENT_IDLE_TIMEOUT, () => {
+		warn(`Connection ${conn.id} idle timeout during relay\n`);
+		closeConnection(conn);
+	});
+
 	conn.client_handle = uloop.handle(conn.client, (events, eof, error) => {
 		if (events & uloop.ULOOP_READ)
 			relayRead(conn, conn.client, conn.upstream);
@@ -803,6 +813,11 @@ function acceptClients(server) {
 		// Check connection limit
 		let active_connections = length(keys(connections));
 		if (active_connections >= MAX_CONNECTIONS) {
+			// Accept and immediately close to reject (don't leave in backlog)
+			let rejected = server.accept();
+			if (rejected) {
+				rejected.close();
+			}
 			warn(`Connection limit reached: ${active_connections}/${MAX_CONNECTIONS}\n`);
 			break;
 		}
@@ -826,11 +841,11 @@ function acceptClients(server) {
 
 		connections[conn.id] = conn;
 
-		// Set idle timeout
-		conn.idle_timer = uloop.timer(() => {
+		// Set idle timeout (uloop.timer signature: timeout_ms, callback)
+		conn.idle_timer = uloop.timer(CLIENT_IDLE_TIMEOUT, () => {
 			warn(`Connection ${conn.id} idle timeout\n`);
 			closeConnection(conn);
-		}, CLIENT_IDLE_TIMEOUT);
+		});
 
 		conn.client_handle = uloop.handle(client, (events, eof, error) => onClientRequest(conn, events, eof, error), uloop.ULOOP_READ);
 	}

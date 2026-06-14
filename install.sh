@@ -9,7 +9,7 @@ TMP_APK="/tmp/$ASSET"
 URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 KEY_NAME="homeproxy-custom.pem"
 KEY_URL="https://github.com/$REPO/releases/latest/download/$KEY_NAME"
-KEY_FINGERPRINT=""  # TODO: Set expected SHA256 fingerprint after first release
+KEY_FINGERPRINT="sha256:88cc3293f56077364a252a059c259bcf028f647e9e9f4cf5a30dca678c2e5b47"
 REPO_LIST="/etc/apk/repositories.d/homeproxy-custom.list"
 REPO_INDEX_URL="https://github.com/$REPO/releases/latest/download/Packages.adb"
 
@@ -57,7 +57,9 @@ install_direct_apk() {
 	wget -O "$TMP_APK" "$URL" || return 1
 
 	echo "verify APK signature"
-	if ! apk verify --keys-dir /etc/apk/keys "$TMP_APK" 2>&1; then
+	if apk verify --keys-dir /etc/apk/keys "$TMP_APK" 2>&1; then
+		echo "APK signature verified"
+	else
 		echo "error: APK signature verification failed" >&2
 		rm -f "$TMP_APK"
 		return 1

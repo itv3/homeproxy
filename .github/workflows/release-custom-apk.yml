@@ -74,6 +74,14 @@ jobs:
             exit 1
           fi
 
+          # Setup trap to clean private key on exit/failure
+          cleanup_key() {
+            if [ -f "homeproxy-custom.key" ]; then
+              shred -u homeproxy-custom.key 2>/dev/null || rm -f homeproxy-custom.key
+            fi
+          }
+          trap cleanup_key EXIT INT TERM
+
           umask 077
           printf '%s\n' "${HOMEPROXY_APK_SIGN_KEY}" > homeproxy-custom.key
           openssl pkey -in homeproxy-custom.key -pubout -out homeproxy-custom.pem
@@ -84,17 +92,27 @@ jobs:
             fakeroot bash build-ipk.sh apk "snapshot"
           popd
 
+          # Explicitly cleanup after successful build
+          cleanup_key
+          trap - EXIT INT TERM
+
       - name: Prepare release assets
+        env:
+          HOMEPROXY_APK_SIGN_KEY: ${{ secrets.HOMEPROXY_APK_SIGN_KEY }}
         run: |
           set -euo pipefail
 
-          # Setup trap to clean private key on exit
+          # Setup trap to clean private key on exit/failure
           cleanup_key() {
             if [ -f "homeproxy-custom.key" ]; then
               shred -u homeproxy-custom.key 2>/dev/null || rm -f homeproxy-custom.key
             fi
           }
           trap cleanup_key EXIT INT TERM
+
+          # Re-create private key for Packages.adb signing
+          umask 077
+          printf '%s\n' "${HOMEPROXY_APK_SIGN_KEY}" > homeproxy-custom.key
 
           app_apk_file="$(ls .github/homeproxy-custom_*.apk | head -n 1)"
           cp "$app_apk_file" homeproxy-custom_all.apk

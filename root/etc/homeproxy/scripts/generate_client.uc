@@ -29,7 +29,19 @@ function reportError(type, message, suggestion) {
 }
 
 function hasErrors() {
-	return length(config_errors.filter(e => e.type === 'error')) > 0;
+	for (let err in config_errors)
+		if (err.type === 'error')
+			return true;
+	return false;
+}
+
+/* Merge source object's keys into target (ucode has no Object.assign) */
+function mergeObject(target, source) {
+	if (type(source) !== 'object')
+		return target;
+	for (let k in source)
+		target[k] = source[k];
+	return target;
 }
 
 function formatErrors() {
@@ -339,14 +351,12 @@ function generate_outbound(node) {
 
 	// Protocol-specific options
 	if (node.type in ['hysteria', 'hysteria2'])
-		Object.assign(outbound, generate_hysteria_options(node));
+		mergeObject(outbound, generate_hysteria_options(node));
 	else if (node.type === 'shadowsocks')
-		Object.assign(outbound, generate_shadowsocks_options(node));
+		mergeObject(outbound, generate_shadowsocks_options(node));
 
 	// Common options
-	Object.assign(outbound, {
-	// Common options
-	Object.assign(outbound, {
+	mergeObject(outbound, {
 		override_address: node.override_address,
 		override_port: strToInt(node.override_port),
 		proxy_protocol: strToInt(node.proxy_protocol),
@@ -1146,10 +1156,15 @@ if (isEmpty(config.experimental))
 	config.experimental = null;
 /* Experimental end */
 
-// Check for configuration errors
+// Check for configuration errors. Fatal errors (e.g. routing cycles) must NOT
+// overwrite the existing sing-box-c.json with an invalid config: that would make
+// `sing-box check` in the init script fail and take the running proxy down.
+// Instead, report the aggregated errors and exit non-zero, leaving the last
+// known-good config in place for the init script to keep using.
 if (hasErrors()) {
 	warn('HomeProxy 配置验证发现以下问题:\n\n' + formatErrors());
-	warn('配置文件已生成，但可能无法正常工作。请修复上述问题后重启服务。\n');
+	warn('为避免用无效配置覆盖当前可用配置，本次未写入新配置；服务将继续使用上次的有效配置。请修复上述问题后重启服务。\n');
+	exit(1);
 }
 
 system('mkdir -p ' + RUN_DIR);

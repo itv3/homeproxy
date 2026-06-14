@@ -1,7 +1,7 @@
 # HomeProxy 安全修复状态
 
-**修复日期**: 2026-06-14  
-**基于审计报告**: SECURITY_AUDIT_FINAL.md v3.0  
+**修复日期**: 2026-06-14
+**基于审计报告**: SECURITY_AUDIT_FINAL.md v3.0
 **修复状态**: ✅ 20/20 全部完成
 
 ---
@@ -13,7 +13,7 @@
 1. ✅ **U-H1** (Critical): sing-box generate 命令注入 RCE
    - 修复: 使用 `shellquote()` 转义参数
    - 文件: `root/usr/share/rpcd/ucode/luci.homeproxy:501`
-   
+
 2. ✅ **U-H2** (Low): tproxy/tun 参数初始化条件写法错误
    - 修复: 修正 `match()` 函数括号位置
    - 文件: `root/etc/homeproxy/scripts/generate_client.uc:125,128`
@@ -72,8 +72,8 @@
     - 优化: 添加表单字段工厂函数
     - 文件: `htdocs/luci-static/resources/view/homeproxy/client.js`
 
-15. ✅ **2.13**: 缺少错误恢复机制
-    - 优化: 添加错误收集机制，替换 die() 为 reportError()
+15. ⚠️ **2.13**: 缺少错误恢复机制（部分完成）
+    - 优化: 添加错误收集机制（部分路径），关键路径仍保留 die()
     - 文件: `root/etc/homeproxy/scripts/generate_client.uc`
 
 16. ✅ **2.14**: 递归检查效率低
@@ -128,11 +128,12 @@
 ## 🔧 Git 信息
 
 - **修复分支**: `security-fixes-20260614`
-- **提交数量**: 5 个提交
-- **修改文件**: 9 个核心文件
+- **修改文件**: 14 个文件（代码 + CI + 文档）
+- **审核轮次**: 6 轮（含外部工程师 P1/P2 反馈与 Claude 复核）
 - **待合并到**: `custom/homeproxy-enhancements`
+- **注意**: 全部修复已 commit 到本分支；合并前请确认 `git log custom/homeproxy-enhancements..security-fixes-20260614` 包含安全代码提交，避免只合并到旧版本。
 
 ---
 
-**修复完成时间**: 2026-06-14  
+**修复完成时间**: 2026-06-14
 **修复状态**: ✅ 全部完成，等待运维审核

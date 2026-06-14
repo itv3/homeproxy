@@ -3,8 +3,6 @@
 		"description": "Grant access to homeproxy configuration",
 		"read": {
 			"file": {
-				"/etc/homeproxy/scripts/update_subscriptions.uc": [ "exec" ],
-				"/tmp/homeproxy-backup-*.tar.gz": [ "read" ],
 				"/var/run/homeproxy/homeproxy.log": [ "read" ],
 				"/var/run/homeproxy/sing-box-c.log": [ "read" ],
 				"/var/run/homeproxy/sing-box-s.log": [ "read" ]
@@ -21,14 +19,18 @@
 		},
 		"write": {
 			"file": {
+				"/etc/homeproxy/scripts/update_subscriptions.uc": [ "exec" ],
 				"/tmp/homeproxy_certificate.tmp": [ "write" ],
+				"/tmp/homeproxy-backup-*.tar.gz": [ "read" ],
 				"/tmp/homeproxy-restore-*.tar.gz": [ "write" ]
 			},
 			"ubus": {
 				"luci.homeproxy": [
 					"acllist_read",
 					"acllist_write",
+					"backup_cleanup",
 					"backup_create",
+					"backup_get_upload_path",
 					"backup_validate",
 					"backup_restore",
 					"certificate_write",

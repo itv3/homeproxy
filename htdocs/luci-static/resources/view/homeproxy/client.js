@@ -17,55 +17,16 @@
 'require tools.firewall as fwtool';
 'require tools.widgets as widgets';
 
-// Form field factory functions
+// Form field factory (only the helper actually used is kept)
 const fieldFactory = {
-	uintField(section, name, label, placeholder, depends) {
-		let field = section.option(form.Value, name, label);
+	uintField(section, tab, name, label, placeholder, depends) {
+		let field = section.taboption(tab, form.Value, name, label);
 		field.datatype = 'uinteger';
 		if (placeholder) field.placeholder = placeholder;
-		if (depends) field.depends(depends);
-		field.modalonly = true;
-		return field;
-	},
-
-	portField(section, name, label, placeholder, depends) {
-		let field = section.option(form.Value, name, label);
-		field.datatype = 'port';
-		if (placeholder) field.placeholder = placeholder;
-		if (depends) field.depends(depends);
-		field.modalonly = true;
-		return field;
-	},
-
-	stringField(section, name, label, placeholder, depends) {
-		let field = section.option(form.Value, name, label);
-		if (placeholder) field.placeholder = placeholder;
-		if (depends) field.depends(depends);
-		field.modalonly = true;
-		return field;
-	},
-
-	listField(section, name, label, choices, depends) {
-		let field = section.option(form.ListValue, name, label);
-		for (let key in choices)
-			field.value(key, choices[key]);
-		if (depends) field.depends(depends);
-		field.modalonly = true;
-		return field;
-	},
-
-	flagField(section, name, label, depends) {
-		let field = section.option(form.Flag, name, label);
-		if (depends) field.depends(depends);
-		field.modalonly = true;
-		return field;
-	},
-
-	dynamicListField(section, name, label, datatype, placeholder, depends) {
-		let field = section.option(form.DynamicList, name, label);
-		if (datatype) field.datatype = datatype;
-		if (placeholder) field.placeholder = placeholder;
-		if (depends) field.depends(depends);
+		if (depends) {
+			for (let key in depends)
+				field.depends(key, depends[key]);
+		}
 		field.modalonly = true;
 		return field;
 	}
@@ -337,17 +298,15 @@ return view.extend({
 		o.depends('main_node', 'urltest');
 		o.rmempty = false;
 
-		o = s.taboption('routing', form.Value, 'main_urltest_interval', _('Test interval'),
-			_('The test interval in seconds.'));
-		o.datatype = 'uinteger';
-		o.placeholder = '180';
-		o.depends('main_node', 'urltest');
+		o = fieldFactory.uintField(s, 'routing', 'main_urltest_interval', _('Test interval'),
+			'180', {'main_node': 'urltest'});
+		o.description = _('The test interval in seconds.');
+		o.modalonly = false;
 
-		o = s.taboption('routing', form.Value, 'main_urltest_tolerance', _('Test tolerance'),
-			_('The test tolerance in milliseconds.'));
-		o.datatype = 'uinteger';
-		o.placeholder = '50';
-		o.depends('main_node', 'urltest');
+		o = fieldFactory.uintField(s, 'routing', 'main_urltest_tolerance', _('Test tolerance'),
+			'50', {'main_node': 'urltest'});
+		o.description = _('The test tolerance in milliseconds.');
+		o.modalonly = false;
 
 		o = s.taboption('routing', form.ListValue, 'main_udp_node', _('Main UDP node'));
 		o.value('nil', _('Disable'));

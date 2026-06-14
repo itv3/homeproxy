@@ -74,7 +74,14 @@ jobs:
           sudo -E apt-get install -y build-essential curl fakeroot libssl-dev lua5.1 meson ninja-build nodejs
 
           pushd apk-tools
-          meson setup build \
+          # The cached builddir (actions/cache) is already configured; a plain
+          # `meson setup build` errors on an existing builddir, so reconfigure
+          # in place when we got a cache hit and configure fresh otherwise.
+          meson_reconfigure=""
+          if [ -f build/meson-info/meson-info.json ]; then
+            meson_reconfigure="--reconfigure"
+          fi
+          meson setup build $meson_reconfigure \
             -Db_lto=true \
             -Dcompressed-help=false \
             -Ddocs=disabled \
@@ -108,6 +115,29 @@ jobs:
           node --check htdocs/luci-static/resources/view/homeproxy/client.js
           node --check htdocs/luci-static/resources/view/homeproxy/node.js
           node --check htdocs/luci-static/resources/view/homeproxy/backup.js
+
+          echo "Checking ucode scripts..."
+          # Check .uc files with Node.js (basic syntax only)
+          for uc_file in root/etc/homeproxy/scripts/*.uc; do
+            if [ -f "$uc_file" ]; then
+              echo "  Checking $uc_file..."
+              node --check --input-type=module < "$uc_file" || {
+                echo "ERROR: Syntax error in $uc_file"
+                exit 1
+              }
+            fi
+          done
+
+          # Check RPC file (luci.homeproxy) - convert top-level return for Node.js
+          for rpc_file in root/usr/share/rpcd/ucode/luci.homeproxy; do
+            if [ -f "$rpc_file" ]; then
+              echo "  Checking $rpc_file (RPC handler with top-level return workaround)..."
+              sed 's/^return /export default /' "$rpc_file" | node --check --input-type=module || {
+                echo "ERROR: Syntax error in $rpc_file"
+                exit 1
+              }
+            fi
+          done
 
           echo "All syntax checks passed"
 
