@@ -137,9 +137,11 @@ jobs:
 
           ### 本版本变更
 
-          - 修复 latest 安装路径中 APK 资产名和 `Packages.adb` 索引包名不一致，导致新路由安装 `homeproxy-custom` 失败的问题
-          - 修复跨路由恢复配置后 Clash API 继续监听旧 LAN 地址，导致 sing-box 无法启动的问题
-          - 修复一键安装脚本在已安装旧版时未显式升级 `homeproxy-custom` 的问题
+          - 修复安全审计发现的 sing-box generate 命令注入风险，并加固安装脚本信任链、RPC 权限边界和资源版本读取路径校验。
+          - 加固 HomeProxy 备份 / 恢复流程：使用随机临时路径、私有工作目录、SHA-256 清单校验、恢复前完整验证、失败自动回滚和敏感文件权限收紧。
+          - 加固 Clash API 面板代理：限制连接数、请求 / 响应缓冲区和 idle 超时，收紧 CORS Origin，并限制组测速 fallback 数量。
+          - 修复 tproxy / tun 参数初始化条件，增加路由节点循环引用和过深嵌套保护，避免异常配置导致生成器递归失控。
+          - 增强 CI/CD：补充 shell / JavaScript / ucode 语法检查、apk-tools 构建缓存兼容处理，并强化 APK 签名私钥清理。
           EOF
 
       - name: Publish GitHub release
