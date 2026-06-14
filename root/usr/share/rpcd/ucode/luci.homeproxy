@@ -22,9 +22,28 @@ function hasKernelModule(kmod) {
 const HP_DIR = '/etc/homeproxy';
 const RUN_DIR = '/var/run/homeproxy';
 
+function commandOutput(command) {
+	const fd = popen(`${command} 2>&1`);
+	let out = '';
+
+	if (fd) {
+		for (let line = fd.read('line'); length(line); line = fd.read('line'))
+			out += line;
+
+		fd.close();
+	}
+
+	return out;
+}
+
 // Generate random suffix for temporary files
 function generateTempSuffix() {
-	return trim(commandOutput('dd if=/dev/urandom bs=8 count=1 2>/dev/null | od -An -tx1 | tr -d " \\n"'));
+	let suffix = trim(commandOutput("hexdump -n 8 -e '1/1 \"%02x\"' /dev/urandom 2>/dev/null"));
+
+	if (!match(suffix, /^[a-f0-9]{16}$/))
+		suffix = replace(trim(commandOutput('date +%s 2>/dev/null')), /[^a-f0-9]/g, '');
+
+	return suffix;
 }
 
 // Create private random work directory for backup/restore operations.
@@ -40,20 +59,6 @@ function createWorkDir() {
 let BACKUP_ARCHIVE = '/tmp/homeproxy-backup-' + generateTempSuffix() + '.tar.gz';
 let RESTORE_ARCHIVE = null;  // Set when file is uploaded
 let ROLLBACK_ARCHIVE = null;  // Set when rollback is created
-
-function commandOutput(command) {
-	const fd = popen(`${command} 2>&1`);
-	let out = '';
-
-	if (fd) {
-		for (let line = fd.read('line'); length(line); line = fd.read('line'))
-			out += line;
-
-		fd.close();
-	}
-
-	return out;
-}
 
 function isEmpty(value) {
 	return !value || value === 'nil' || (type(value) in ['array', 'object'] && length(value) === 0);
