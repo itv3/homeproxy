@@ -184,7 +184,7 @@ return view.extend({
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('备份')),
 				E('div', { 'class': 'cbi-section-descr' },
-					_('下载包含 /etc/config/homeproxy、自定义直连/代理列表，以及已上传证书和私钥的 tar.gz 备份文件。')),
+					_('下载包含 /etc/config/homeproxy、自定义直连/代理列表，以及已上传证书和私钥的 tar.gz 备份文件。备份内含明文私钥，请妥善保管，避免在不可信渠道传输或存储；恢复时仅校验文件完整性（SHA-256 清单），不验证来源真实性。')),
 				E('div', { 'class': 'cbi-value' }, [
 					E('label', { 'class': 'cbi-value-title' }, _('下载备份')),
 					E('div', { 'class': 'cbi-value-field' }, [
