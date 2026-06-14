@@ -1,7 +1,7 @@
 # HomeProxy 安全修复审核清单
 
 **审核分支**: `security-fixes-20260614`
-**提交总数**: 4 个提交
+**提交范围**: `custom/homeproxy-enhancements..security-fixes-20260614`（共 6 轮复核，提交数以 `git log` 为准）
 **修复项目**: 20/20 全部完成
 **详细文档**: 见 `SECURITY_FIXES_IMPLEMENTATION.md`
 
@@ -10,7 +10,7 @@
 ## ✅ 必须审核的安全关键修复
 
 ### 1. 命令注入 RCE (U-H1) - Critical
-**文件**: `root/usr/share/rpcd/ucode/luci.homeproxy:501`
+**文件**: `root/usr/share/rpcd/ucode/luci.homeproxy:800`
 - [ ] 确认 `shellquote()` 函数正确包裹用户输入
 - [ ] 测试特殊字符（`; $ | & ` 等）是否被正确转义
 
@@ -27,7 +27,7 @@
 - [ ] 确认没有遗漏的方法
 
 ### 4. 路径穿越 (N-M1) - Medium
-**文件**: `root/usr/share/rpcd/ucode/luci.homeproxy:572`
+**文件**: `root/usr/share/rpcd/ucode/luci.homeproxy:871`
 - [ ] 确认白名单只包含 4 个资源类型
 - [ ] 测试非白名单类型是否被拒绝
 
@@ -80,8 +80,8 @@
 ## 🔍 快速验证命令
 
 ```bash
-# 1. 检查关键文件修改
-git diff b1772b2..3d1497d --stat
+# 1. 检查关键文件修改（相对主分支的完整改动）
+git diff custom/homeproxy-enhancements..security-fixes-20260614 --stat
 
 # 2. 查看 shellquote 使用
 grep -n "shellquote" root/usr/share/rpcd/ucode/luci.homeproxy
@@ -96,6 +96,10 @@ grep -A5 "allowed_types" root/usr/share/rpcd/ucode/luci.homeproxy
 sh -n install.sh
 node --check htdocs/luci-static/resources/view/homeproxy/backup.js
 node --check htdocs/luci-static/resources/view/homeproxy/client.js
+# ucode 脚本（node 仅做基础语法检查，ucode≠ESM，不能替代真机或 ucode -c）
+node --check --input-type=module < root/etc/homeproxy/scripts/generate_client.uc
+node --check --input-type=module < root/etc/homeproxy/scripts/clash_api_proxy.uc
+sed 's/^return /export default /' root/usr/share/rpcd/ucode/luci.homeproxy | node --check --input-type=module
 ```
 
 ---
