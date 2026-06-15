@@ -18,6 +18,7 @@ const ucimain = 'config';
 const shadowtls_suffix = '-out-shadowtls';
 const filter_timeout = 10000;
 const fallback_delay_limit = 5;
+const upstream_read_timeout = 5;  // seconds; total read deadline for synchronous fetchUpstream
 
 // Resource limits
 const MAX_CONNECTIONS = 64;
@@ -517,10 +518,13 @@ function upstreamRequest(method, path, request, body) {
 	return join("\r\n", headers) + "\r\n\r\n" + body;
 }
 
-// Synchronous upstream fetch for filtered responses
-// NOTE: This blocks the event loop. Only used for /proxies and /group/*/delay paths.
-// Regular relay paths use async event-driven forwarding.
-// TODO: Convert to async uloop-based implementation to avoid blocking.
+// Synchronous upstream fetch for filtered responses.
+// NOTE: This blocks the event loop, so reads are bounded by a total deadline
+// (upstream_read_timeout) and each recv waits for readiness via socket.poll().
+// An upstream that accepts the connection but never replies therefore can no
+// longer hang the proxy indefinitely. Only used for /proxies and /group/*/delay
+// paths; regular relay paths use async event-driven forwarding.
+// TODO: Convert to async uloop-based implementation to avoid blocking entirely.
 function fetchUpstream(method, path, request, body) {
 	let upstream = socket.connect(target.host, target.port, null, 3000);
 
@@ -534,9 +538,22 @@ function fetchUpstream(method, path, request, body) {
 		return null;
 	}
 
-	// Limit iterations to prevent long blocking
-	// Max 512 × 16KB = 8MB, should complete in < 1 second on LAN
+	// Total read deadline. time() is whole seconds, which is adequate here.
+	let deadline = time() + upstream_read_timeout;
+
+	// Cap iterations as a secondary bound: max 512 × 16KB = 8MB.
 	for (let i = 0; i < 512; i++) {
+		let remaining = (deadline - time()) * 1000;
+		if (remaining <= 0)
+			break;
+
+		// Wait up to the remaining budget (in <=1s slices) for readable data.
+		// Empty result means the slice elapsed with no data: loop and re-check
+		// the deadline rather than blocking in recv().
+		let ready = socket.poll((remaining < 1000) ? remaining : 1000, [ upstream, socket.POLLIN ]);
+		if (!length(ready))
+			continue;
+
 		let chunk = upstream.recv(16384);
 
 		if (chunk === null)
@@ -553,7 +570,7 @@ function fetchUpstream(method, path, request, body) {
 
 	upstream.close();
 
-	return raw;
+	return length(raw) ? raw : null;
 }
 
 function fetchVisibleProxyGroup(group_name, request) {

@@ -101,6 +101,17 @@ function formatController(host, port) {
 	return sprintf((index(host, ':') >= 0) ? '[%s]:%d' : '%s:%d', host, port);
 }
 
+/* Generate a random 256-bit hex secret for the Clash API. Returns null when no
+ * usable randomness source is available, in which case the caller leaves the
+ * secret unset rather than installing a predictable value. */
+function generateClashSecret() {
+	let secret = trim(executeCommand("head -c 32 /dev/urandom | hexdump -v -e '1/1 \"%02x\"'")?.stdout || '');
+	if (!match(secret, /^[a-f0-9]{64}$/))
+		secret = trim(executeCommand('tr -dc a-f0-9 < /dev/urandom | head -c 64')?.stdout || '');
+
+	return match(secret, /^[a-f0-9]{32,}$/) ? secret : null;
+}
+
 function normalizeLocalControllerOption(local_addresses, fallback_host, option, default_port, set_when_empty) {
 	let value = uci.get(uciconfig, ucimain, option);
 
@@ -131,9 +142,11 @@ function normalizeLocalControllerOptions() {
 	if (isEmpty(fallback_host))
 		return;
 
+	/* clash_api_external_controller is intentionally pinned to loopback (see
+	 * below) and must NOT be rewritten to the LAN address. Only the LAN-facing
+	 * display proxy is bound to a reachable local address here. */
 	for (let item in [
-		[ 'clash_api_external_controller', 9090, true ],
-		[ 'clash_api_proxy_external_controller', 9091, false ]
+		[ 'clash_api_proxy_external_controller', 9091, true ]
 	])
 		normalizeLocalControllerOption(local_addresses, fallback_host, item[0], item[1], item[2]);
 }
@@ -190,8 +203,30 @@ if (isEmpty(uci.get(uciconfig, uciserver, 'log_level')))
 if (isEmpty(uci.get(uciconfig, ucimain, 'clash_api_enabled')))
 	uci.set(uciconfig, ucimain, 'clash_api_enabled', '1');
 
-if (isEmpty(uci.get(uciconfig, ucimain, 'clash_api_external_controller')))
-	uci.set(uciconfig, ucimain, 'clash_api_external_controller', '192.168.9.1:9090');
+/* Bind sing-box's own Clash API controller to loopback so it is never
+ * reachable directly from the LAN; dashboards reach it only through the
+ * filtering display proxy. Existing LAN-bound controllers are migrated to
+ * 127.0.0.1 once (port preserved); a later deliberate change is left alone. */
+const clash_external = uci.get(uciconfig, ucimain, 'clash_api_external_controller');
+if (isEmpty(clash_external)) {
+	uci.set(uciconfig, ucimain, 'clash_api_external_controller', '127.0.0.1:9090');
+} else if (isEmpty(uci.get(uciconfig, ucimigration, 'clash_api_localhost'))) {
+	const clash_controller = parseController(clash_external, 9090);
+	if (!isPortableBindHost(clash_controller.host))
+		uci.set(uciconfig, ucimain, 'clash_api_external_controller',
+			formatController('127.0.0.1', clash_controller.port || 9090));
+}
+uci.set(uciconfig, ucimigration, 'clash_api_localhost', '1');
+
+/* sing-box's Clash API performs NO authentication when the secret is empty,
+ * and the LAN-facing display proxy forwards to it, so anyone able to reach the
+ * proxy could otherwise control the proxy without credentials. Generate a
+ * random secret when none is configured. */
+if (isEmpty(uci.get(uciconfig, ucimain, 'clash_api_secret'))) {
+	const clash_secret = generateClashSecret();
+	if (!isEmpty(clash_secret))
+		uci.set(uciconfig, ucimain, 'clash_api_secret', clash_secret);
+}
 
 normalizeLocalControllerOptions();
 

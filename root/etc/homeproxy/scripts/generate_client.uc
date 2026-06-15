@@ -178,7 +178,7 @@ if (match(proxy_mode, /tun/)) {
 const log_level = uci.get(uciconfig, ucimain, 'log_level') || 'warn';
 
 const clash_api_enabled = uci.get(uciconfig, ucimain, 'clash_api_enabled') || '0',
-      clash_api_external_controller = uci.get(uciconfig, ucimain, 'clash_api_external_controller') || '192.168.9.1:9090',
+      clash_api_external_controller = uci.get(uciconfig, ucimain, 'clash_api_external_controller') || '127.0.0.1:9090',
       clash_api_secret = uci.get(uciconfig, ucimain, 'clash_api_secret'),
       clash_api_default_mode = uci.get(uciconfig, ucimain, 'clash_api_default_mode') || 'Rule',
       clash_api_allow_origin = uci.get(uciconfig, ucimain, 'clash_api_allow_origin') || [],

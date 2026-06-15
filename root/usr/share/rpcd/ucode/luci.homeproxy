@@ -814,6 +814,13 @@ const methods = {
 				return { result: false, error: `恢复失败且自动回滚失败，恢复退出码 ${exit_code}，回滚退出码 ${rollback_code}`, rollback: ROLLBACK_ARCHIVE };
 			}
 
+			// Re-run config migration on the restored config so security
+			// defaults (loopback-bound Clash API controller and a generated
+			// secret) and any version migrations are re-applied. Without this,
+			// restoring an older backup would reintroduce a LAN-exposed,
+			// unauthenticated Clash API.
+			system(`ucode ${HP_DIR}/scripts/migrate_config.uc >/dev/null 2>&1`);
+
 			let adjustments = normalizeRestoredLocalControllers();
 			system('/sbin/uci commit homeproxy');
 			system(`rm -f ${shellquote(restore_path)} /tmp/luci-indexcache.*`);
