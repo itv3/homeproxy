@@ -68,13 +68,14 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          release_version="${tag#custom-}"
-          apk_version="${release_version/-/~}"
-          if ! printf '%s\n' "$apk_version" | grep -Eq '^[0-9]{8}~[0-9a-f]+$'; then
+          if [[ "$tag" =~ ^custom-([0-9]{8})-([0-9A-Fa-f]+)$ ]]; then
+            apk_version="${BASH_REMATCH[1]}~${BASH_REMATCH[2],,}"
+          else
             echo "Unsupported custom release tag: $tag" >&2
             echo "Expected tag format: custom-YYYYMMDD-<hex-commit>" >&2
             exit 1
           fi
+          echo "Prepared custom APK version: $apk_version"
 
           {
             echo "HOMEPROXY_APK_VERSION=$apk_version"
