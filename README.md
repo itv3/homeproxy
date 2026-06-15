@@ -228,6 +228,8 @@ Packages.adb
 homeproxy-custom.pem
 ```
 
+Release 标题、APK 软件包版本和软件源描述会把 tag 中的 `YYYYMMDD-短SHA` 转成 `YYYYMMDD~短SHA`，例如 `custom-20260615-6af5af2` 会显示为 `20260615~6af5af2`。`~短SHA` 是 apk-tools 支持的 commit hash 版本段；普通 `-` 在 APK 版本号中只适合 `-r数字` 修订号。
+
 发布后检查：
 
 ```sh
@@ -314,6 +316,8 @@ git push origin "$TAG"
 ```
 
 推送 tag 后，`Release custom APK` workflow 会发布新版 APK 到 GitHub Releases。发布后检查：
+
+Release 标题、APK 软件包版本和软件源描述会把 tag 中的 `YYYYMMDD-短SHA` 转成 `YYYYMMDD~短SHA`，例如 `custom-20260615-6af5af2` 会显示为 `20260615~6af5af2`。`~短SHA` 是 apk-tools 支持的 commit hash 版本段；普通 `-` 在 APK 版本号中只适合 `-r数字` 修订号。
 
 ```sh
 curl -fsSL https://api.github.com/repos/itv3/homeproxy/releases/latest \

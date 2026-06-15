@@ -21,7 +21,9 @@ function get_mk_value() {
 
 ORIGINAL_PKG_NAME="$(get_mk_value "PKG_NAME")"
 PKG_NAME="${CUSTOM_PKG_NAME:-$ORIGINAL_PKG_NAME}"
-if [ "$RELEASE_TYPE" == "release" ]; then
+if [ -n "${CUSTOM_PKG_VERSION:-}" ]; then
+	PKG_VERSION="$CUSTOM_PKG_VERSION"
+elif [ "$RELEASE_TYPE" == "release" ]; then
 	PKG_VERSION="$(get_mk_value "PKG_VERSION")"
 else
 	PKG_VERSION="99.$PKG_SOURCE_DATE_EPOCH-r0"

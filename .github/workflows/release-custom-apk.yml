@@ -64,6 +64,22 @@ jobs:
           curl -fLO "https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/ipkg-build"
           sudo install -m0755 ipkg-build /usr/local/bin/ipkg-build
 
+      - name: Prepare custom version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          release_version="${tag#custom-}"
+          apk_version="${release_version/-/~}"
+          if ! printf '%s\n' "$apk_version" | grep -Eq '^[0-9]{8}~[0-9a-f]+$'; then
+            echo "Unsupported custom release tag: $tag" >&2
+            echo "Expected tag format: custom-YYYYMMDD-<hex-commit>" >&2
+            exit 1
+          fi
+
+          {
+            echo "HOMEPROXY_APK_VERSION=$apk_version"
+          } >> "$GITHUB_ENV"
+
       - name: Build APK
         env:
           HOMEPROXY_APK_SIGN_KEY: ${{ secrets.HOMEPROXY_APK_SIGN_KEY }}
@@ -87,6 +103,7 @@ jobs:
           openssl pkey -in homeproxy-custom.key -pubout -out homeproxy-custom.pem
           pushd .github
           CUSTOM_PKG_NAME="homeproxy-custom" \
+            CUSTOM_PKG_VERSION="${HOMEPROXY_APK_VERSION}" \
             CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
             APK_SIGN_KEY="../homeproxy-custom.key" \
             fakeroot bash build-ipk.sh apk "snapshot"
@@ -122,7 +139,7 @@ jobs:
 
           apk --keys-dir "$PWD/apk-keys" mkndx \
             --sign-key homeproxy-custom.key \
-            --description "HomeProxy Custom ${GITHUB_REF_NAME}" \
+            --description "HomeProxy Custom ${HOMEPROXY_APK_VERSION}" \
             --pkgname-spec '${name}_all.apk' \
             --output Packages.adb \
             homeproxy-custom_all.apk
@@ -153,13 +170,17 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          title="HomeProxy Custom ${tag#custom-}"
+          title="HomeProxy Custom ${HOMEPROXY_APK_VERSION}"
           assets=(
             homeproxy-custom_all.apk
             Packages.adb
             homeproxy-custom.pem
           )
           if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --title "$title" \
+              --notes-file RELEASE_NOTES.md \
+              --latest
             gh release upload "$tag" "${assets[@]}" --clobber
           else
             gh release create "$tag" "${assets[@]}" \
