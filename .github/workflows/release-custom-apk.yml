@@ -69,12 +69,15 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           if [[ "$tag" =~ ^custom-([0-9]{8})-([0-9A-Fa-f]+)$ ]]; then
-            apk_version="${BASH_REMATCH[1]}~${BASH_REMATCH[2],,}"
+            release_date="${BASH_REMATCH[1]}"
+            release_sha="${BASH_REMATCH[2],,}"
           else
             echo "Unsupported custom release tag: $tag" >&2
             echo "Expected tag format: custom-YYYYMMDD-<hex-commit>" >&2
             exit 1
           fi
+          release_time="$(TZ=Asia/Shanghai date -d "@$(git show -s --format=%ct HEAD)" +%H%M%S)"
+          apk_version="${release_date}.${release_time}~${release_sha}"
           echo "Prepared custom APK version: $apk_version"
 
           {
