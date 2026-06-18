@@ -74,7 +74,7 @@ function parseGroupDelayResult(result) {
 
 	error = result.message || result.error || '';
 
-	for (let name in keys(result)) {
+	for (let name in result) {
 		let delay = result[name];
 
 		if (type(delay) === 'int' || type(delay) === 'double') {
@@ -84,6 +84,19 @@ function parseGroupDelayResult(result) {
 	}
 
 	return { delays, has_result, error };
+}
+
+function loadedProxyTags(hpuci) {
+	let payload = clashApiGet(hpuci, '/proxies', FETCH_TIMEOUT),
+	    tags = {};
+
+	if (type(payload) === 'object' && type(payload.proxies) === 'object')
+		for (let name in payload.proxies)
+			tags[name] = true;
+	else
+		return null;
+
+	return tags;
 }
 
 const methods = {
@@ -98,6 +111,7 @@ const methods = {
 			let nodes = {},
 			    tested = 0,
 			    tags = [],
+			    loaded = null,
 			    warning = '';
 
 			hpuci.load('homeproxy');
@@ -123,10 +137,16 @@ const methods = {
 			}
 
 			if (length(tags)) {
+				if (hpuci.get('homeproxy', 'config', 'clash_api_enabled') !== '1')
+					return { result: false, error: '请先开启 Clash API 后再进行连通性测试。' };
+
 				let parsed = parseGroupDelayResult(clashApiGet(hpuci, groupDelayPath(), groupDelayTimeout()));
+				loaded = loadedProxyTags(hpuci);
 
 				if (!parsed.has_result)
-					warning = parsed.error || '本次连通性测试未返回结果，已保留原显示。';
+					warning = parsed.error || ((loaded === null)
+						? 'Clash API 未响应，请确认 HomeProxy 客户端正在运行。'
+						: '本次连通性测试未返回结果，已保留原显示。');
 
 				for (let i = 0; i < length(sections); i++) {
 					let section = sections[i],
@@ -138,6 +158,12 @@ const methods = {
 
 					if (type(delay) === 'int' || type(delay) === 'double')
 						nodes[section] = { status: 'ok', delay: int(delay), target: tag };
+					else if (type(loaded) === 'object' && !(tag in loaded))
+						nodes[section] = {
+							status: 'unloaded',
+							target: tag,
+							error: '节点未加入当前运行配置'
+						};
 					else
 						nodes[section] = {
 							status: 'unchanged',

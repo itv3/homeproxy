@@ -23,12 +23,6 @@ const callNodesTcping = rpc.declare({
 	expect: { '': {} }
 });
 
-const callConfigGet = rpc.declare({
-	object: 'luci.homeproxy_config',
-	method: 'config_get',
-	expect: { values: {} }
-});
-
 function allowInsecureConfirm(ev, _section_id, value) {
 	if (value === '1' && !confirm(_('Are you sure to allow insecure?')))
 		ev.target.firstElementChild.checked = null;
@@ -1440,11 +1434,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 return view.extend({
 	load() {
 		return Promise.all([
-			callConfigGet().then((values) => {
-				uci.state.values.homeproxy = values;
-				uci.loaded.homeproxy = Promise.resolve(values);
-				return 'homeproxy';
-			}),
+			uci.load('homeproxy'),
 			hp.getBuiltinFeatures()
 		]);
 	},

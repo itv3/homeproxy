@@ -22,12 +22,6 @@ const callServiceList = rpc.declare({
 	expect: { '': {} }
 });
 
-const callConfigGet = rpc.declare({
-	object: 'luci.homeproxy_config',
-	method: 'config_get',
-	expect: { values: {} }
-});
-
 const CBIGenValue = form.Value.extend({
 	__name__: 'CBI.GenValue',
 
@@ -123,11 +117,7 @@ function handleGenKey(option) {
 return view.extend({
 	load() {
 		return Promise.all([
-			callConfigGet().then((values) => {
-				uci.state.values.homeproxy = values;
-				uci.loaded.homeproxy = Promise.resolve(values);
-				return 'homeproxy';
-			}),
+			uci.load('homeproxy'),
 			hp.getBuiltinFeatures()
 		]);
 	},

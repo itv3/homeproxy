@@ -14,7 +14,7 @@ import { cursor } from 'uci';
 
 import {
 	isEmpty, parseURL, strToBool, strToInt, strToTime,
-	removeBlankAttrs, validation, HP_DIR, RUN_DIR
+	removeBlankAttrs, shellQuote, validation, HP_DIR, RUN_DIR
 } from 'homeproxy';
 
 // Configuration error collection
@@ -487,6 +487,69 @@ function has_outbound_tag(client_config, tag) {
 	return false;
 }
 
+function delay_test_skip_reason(node) {
+	if (type(node) !== 'object' || isEmpty(node))
+		return '节点配置为空';
+
+	if (isEmpty(node.type))
+		return '缺少节点类型';
+
+	if (node.type in ['direct', 'block'])
+		return '直连或阻断节点不测速';
+
+	if (isEmpty(node.address) || isEmpty(node.port))
+		return '缺少地址或端口';
+
+	if (!validation('port', node.port))
+		return '端口格式无效';
+
+	return null;
+}
+
+function delay_test_tmp_path(tag) {
+	return RUN_DIR + '/delay-test-' + replace(tag, /[^A-Za-z0-9_.-]/g, '_') + '.json';
+}
+
+function delay_test_check_config(client_config, node, tag) {
+	let test_config = json(sprintf('%.J', client_config)),
+	    path = delay_test_tmp_path(tag),
+	    ok = false;
+
+	push_node_outbound(test_config, node, tag);
+
+	if (isEmpty(test_config.endpoints))
+		test_config.endpoints = null;
+
+	system('mkdir -p ' + shellQuote(RUN_DIR));
+	writefile(path, sprintf('%.J\n', removeBlankAttrs(test_config)));
+
+	ok = (system('/usr/bin/sing-box check --config ' + shellQuote(path) + ' >/dev/null 2>&1') === 0);
+	system('rm -f ' + shellQuote(path));
+
+	return ok;
+}
+
+function push_delay_test_node(client_config, node, tag) {
+	const reason = delay_test_skip_reason(node);
+
+	if (reason) {
+		reportError('warning',
+			sprintf('跳过节点连通性测试出站 %s：%s', (type(node) === 'object' && node['.name']) ? node['.name'] : tag, reason),
+			'该节点不会加入隐藏测速 Selector；请修正节点配置后再测试');
+		return false;
+	}
+
+	if (!delay_test_check_config(client_config, node, tag)) {
+		reportError('warning',
+			sprintf('跳过节点连通性测试出站 %s：sing-box check 未通过', (type(node) === 'object' && node['.name']) ? node['.name'] : tag),
+			'该节点不会加入隐藏测速 Selector；请修正节点配置后再测试');
+		return false;
+	}
+
+	push_node_outbound(client_config, node, tag);
+	return has_outbound_tag(client_config, tag);
+}
+
 function push_delay_test_selector(client_config) {
 	let nodes = [];
 
@@ -497,7 +560,7 @@ function push_delay_test_selector(client_config) {
 		const tag = 'cfg-' + cfg['.name'] + '-out';
 
 		if (!has_outbound_tag(client_config, tag))
-			push_node_outbound(client_config, cfg, tag);
+			push_delay_test_node(client_config, cfg, tag);
 
 		if (has_outbound_tag(client_config, tag) && !~index(nodes, tag))
 			push(nodes, tag);

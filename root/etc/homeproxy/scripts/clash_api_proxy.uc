@@ -232,7 +232,7 @@ function filterProxiesPayload(payload) {
 	filterProxyItem(payload);
 
 	if (type(payload.proxies) === 'object') {
-		for (let name in keys(payload.proxies)) {
+		for (let name in payload.proxies) {
 			if (isHiddenProxyTag(name)) {
 				delete payload.proxies[name];
 				continue;
@@ -243,7 +243,7 @@ function filterProxiesPayload(payload) {
 	}
 
 	if (type(payload.providers) === 'object') {
-		for (let name in keys(payload.providers)) {
+		for (let name in payload.providers) {
 			let provider = payload.providers[name];
 
 			if (type(provider) !== 'object')

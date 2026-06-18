@@ -163,6 +163,9 @@ jobs:
           - 生成运行配置时自动加入隐藏测速 Selector，不写入 UCI，不参与路由；MetaCubeXD 面板仅隐藏该测速组本身，组内节点仍正常显示。
           - 测试结果按 MetaCubeXD 的组测速语义处理：默认测试 URL 为 `https://www.gstatic.com/generate_204`，单节点超时为 5000 ms，整组请求最多等待 30 秒。
           - 本次未返回结果的节点保留原显示，避免误显示为整批失败；延迟列默认显示 `-`，明确超时才显示“超时”。
+          - 隐藏测速 Selector 会先用临时配置执行 `sing-box check` 验证候选节点，未配置完整的草稿节点会跳过测速入组，避免影响现有服务启动。
+          - 移除额外的 `luci.homeproxy_config` 全量配置读取 RPC，前端恢复使用 LuCI 原生 UCI 读取路径，减少敏感配置暴露面。
+          - Clash API 未开启或未响应时返回明确提示，并保留原延迟显示，避免将 API 不可用误判为节点失败。
           - 升级/安装 `homeproxy-custom` 后自动刷新 LuCI 缓存、LuCI 会话、`rpcd` 和 `uhttpd`，避免新增 ACL 后旧 Web 会话继续报权限错误。
           EOF
 
