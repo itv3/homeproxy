@@ -158,10 +158,9 @@ jobs:
 
           ### 本版本变更
 
-          - 修复 APK 升级时 `/etc/homeproxy/scripts/*.uc` 被 APK 保护为 `.apk-new`，导致包版本已更新但订阅更新脚本仍停留在旧版本的问题。
-          - 升级后自动合并 `/etc/homeproxy/scripts/*.apk-new` 到正式脚本路径，并恢复脚本执行权限。
-          - 升级后刷新 LuCI 缓存和 `rpcd/uhttpd`，但不再删除 LuCI session，避免当前页面继续操作时报 `PermissionError: Exec permission denied`。
-          - 保留上一版订阅修复：`update_via_proxy=1` 更新订阅后，节点有新增、更新或删除时会在写入 UCI 后重启 HomeProxy，使 Clash API 立即加载新节点。
+          - 订阅导入 Surge/Clash Hysteria2 节点时，如果节点带有 `server-cert-fingerprint-sha256`，但当前 sing-box 版本低于 1.13.0、无法表达证书公钥 SHA256 校验，则自动启用 `tls_insecure` 兼容降级。
+          - 订阅导入 Hysteria2 URI 时，如果节点带有 `pinSHA256`，也按同样规则兼容处理。
+          - 自动降级时写入订阅日志，说明该节点因当前 sing-box 版本无法表达证书 fingerprint 而启用 TLS insecure fallback。
           EOF
 
       - name: Publish GitHub release

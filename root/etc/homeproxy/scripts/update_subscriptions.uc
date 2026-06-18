@@ -94,6 +94,41 @@ function uci_value_equal(a, b) {
 	return sprintf('%J', a) == sprintf('%J', b);
 }
 
+function version_at_least(version, major, minor, patch) {
+	const m = match(version || '', /^([0-9]+)\.([0-9]+)\.([0-9]+)/);
+	if (!m)
+		return false;
+
+	const current = [ int(m[1]), int(m[2]), int(m[3]) ],
+	      required = [ major, minor, patch ];
+
+	for (let i = 0; i < 3; i++) {
+		if (current[i] > required[i])
+			return true;
+		if (current[i] < required[i])
+			return false;
+	}
+
+	return true;
+}
+
+function tls_cert_pin_unsupported() {
+	return !version_at_least(sing_features.version, 1, 13, 0);
+}
+
+function apply_tls_cert_pin_fallback(config, label, pin) {
+	if (!pin || !tls_cert_pin_unsupported())
+		return;
+
+	if (config.tls_insecure === '1')
+		return;
+
+	config.tls_insecure = '1';
+	log(sprintf('Node %s uses server certificate fingerprint, but sing-box %s cannot express it; enabling TLS insecure fallback.',
+		label || config.label || 'NULL',
+		sing_features.version || 'unknown'));
+}
+
 function parse_uri(uri) {
 	let config, url, params;
 
@@ -204,6 +239,7 @@ function parse_uri(uri) {
 				tls_insecure: (params.insecure === '1') ? '1' : '0',
 				tls_sni: params.sni
 			};
+			apply_tls_cert_pin_fallback(config, config.label, params.pinSHA256);
 
 			break;
 		case 'socks':
@@ -632,6 +668,7 @@ function parse_surge_proxy(line) {
 			tls_sni: opts.sni,
 			tls_insecure: opts['skip-cert-verify'] ? bval(opts['skip-cert-verify']) : '0'
 		};
+		apply_tls_cert_pin_fallback(config, label, opts['server-cert-fingerprint-sha256']);
 		if (opts['port-hopping'])
 			/* Surge 的 "start-end[,start-end]" 需要转换为 sing-box server_ports
 			 * 使用的 "start:end"，sing-quic ParsePorts() 要求冒号格式。 */
