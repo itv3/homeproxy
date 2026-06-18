@@ -108,7 +108,7 @@ jobs:
           pushd .github
           CUSTOM_PKG_NAME="homeproxy-custom" \
             CUSTOM_PKG_VERSION="${HOMEPROXY_APK_VERSION}" \
-            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 Surge 格式节点订阅、tcping 测试、SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
+            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 Surge 格式节点订阅、连通性测试、SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
             APK_SIGN_KEY="../homeproxy-custom.key" \
             fakeroot bash build-ipk.sh apk "snapshot"
           popd
@@ -158,12 +158,12 @@ jobs:
 
           ### 本版本变更
 
-          - 支持 Surge/Clash 托管配置格式订阅（YAML 风格 `proxies:`），可直接导入 `trojan`、`ss`、`hysteria2` / `hy2`、`anytls` 节点。
-          - 新增 Surge 节点字段映射：Trojan WebSocket、SS2022 + ShadowTLS、UDP-over-TCP、Hysteria2 salamander obfs、port-hopping、ALPN、SNI、skip-cert-verify 等字段会写入 HomeProxy 现有 UCI schema。
-          - 修复 Hysteria2 `port-hopping` 范围格式，将 Surge 的 `start-end` 转换为 sing-box 所需的 `start:end`。
-          - 加固订阅解析边界：仅 Surge 解析分支产出的对象会跳过 URI 解析，避免任意 JSON 对象绕过原有白名单映射；同时保留 JSON、SIP008、Base64 URI 列表和明文 URI 列表原有路径。
-          - 增强 Surge 行解析兼容性：支持 `Name=...` / `Name  =  ...`、大小写不同的 option key、引号内逗号，以及未加引号的多段 `port-hopping`。
-          - 已在 ImmortalWrt 25.12.0 / sing-box 1.12.25 上用真实 Surge 订阅验证，`🇸🇬ss.2022+ShadowTLS` 与 `🇸🇬Hy2` 节点均通过 `sing-box tools fetch` 出站连通测试。
+          - 节点页面和订阅节点页面新增“连通性测试”按钮，并在节点列表中新增“延迟”列。
+          - 通过 sing-box Clash API 对隐藏测速 Selector 执行 URL 延迟测试，支持 Hysteria2、AnyTLS、SS2022 + ShadowTLS 等已加入运行配置的节点。
+          - 生成运行配置时自动加入隐藏测速 Selector，不写入 UCI，不参与路由；MetaCubeXD 面板仅隐藏该测速组本身，组内节点仍正常显示。
+          - 测试结果按 MetaCubeXD 的组测速语义处理：默认测试 URL 为 `https://www.gstatic.com/generate_204`，单节点超时为 5000 ms，整组请求最多等待 30 秒。
+          - 本次未返回结果的节点保留原显示，避免误显示为整批失败；延迟列默认显示 `-`，明确超时才显示“超时”。
+          - 升级/安装 `homeproxy-custom` 后自动刷新 LuCI 缓存、LuCI 会话、`rpcd` 和 `uhttpd`，避免新增 ACL 后旧 Web 会话继续报权限错误。
           EOF
 
       - name: Publish GitHub release

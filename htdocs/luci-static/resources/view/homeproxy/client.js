@@ -39,6 +39,12 @@ const callServiceList = rpc.declare({
 	expect: { '': {} }
 });
 
+const callConfigGet = rpc.declare({
+	object: 'luci.homeproxy_config',
+	method: 'config_get',
+	expect: { values: {} }
+});
+
 const callReadDomainList = rpc.declare({
 	object: 'luci.homeproxy',
 	method: 'acllist_read',
@@ -121,7 +127,11 @@ let stubValidator = {
 return view.extend({
 	load() {
 		return Promise.all([
-			uci.load('homeproxy'),
+			callConfigGet().then((values) => {
+				uci.state.values.homeproxy = values;
+				uci.loaded.homeproxy = Promise.resolve(values);
+				return 'homeproxy';
+			}),
 			hp.getBuiltinFeatures(),
 			network.getHostHints()
 		]);

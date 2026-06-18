@@ -1,116 +1,40 @@
 #!/usr/bin/ucode
 'use strict';
 
-import * as socket from 'socket';
 import { popen } from 'fs';
 import { cursor } from 'uci';
 
-const TCPING_TIMEOUT = 3000;
 const TCPING_MAX_NODES = 300;
-const SELF_PATH = '/usr/share/rpcd/ucode/luci.homeproxy_tcping';
+const DELAY_TIMEOUT = 5000;
+const FETCH_TIMEOUT = 30000;
+const DELAY_TEST_URL = 'https://www.gstatic.com/generate_204';
+const DELAY_TEST_SELECTOR = '__homeproxy_delay_test__';
 
 function shellquote(s) {
 	return `'${replace(s, "'", "'\\''")}'`;
 }
 
-function isEmpty(value) {
-	return !value || value === 'nil' || (type(value) in ['array', 'object'] && length(value) === 0);
+function urlencode(value) {
+	return replace(value, /[^A-Za-z0-9_.~-]/g, (m) =>
+		'%' + sprintf('%02X', ord(m)));
 }
 
-function firstValue(value) {
-	return (type(value) === 'array') ? value[0] : value;
+function controllerBase(hpuci) {
+	let controller = hpuci.get('homeproxy', 'config', 'clash_api_external_controller') || '127.0.0.1:9090',
+	    port = match(controller, /:([0-9]+)$/);
+
+	return 'http://127.0.0.1:' + (port ? port[1] : '9090');
 }
 
-function normalizeHost(value) {
-	value = trim(firstValue(value) || '');
-
-	if (length(value) >= 2 && substr(value, 0, 1) === '[' && substr(value, length(value) - 1, 1) === ']')
-		value = substr(value, 1, length(value) - 2);
-
-	return value;
-}
-
-function normalizePort(value) {
-	return trim(sprintf('%s', firstValue(value) || ''));
-}
-
-function formatHostPort(host, port) {
-	return sprintf((index(host, ':') >= 0) ? '[%s]:%d' : '%s:%d', host, port);
-}
-
-function clockDiffMs(start, end) {
-	let ns = (end[0] - start[0]) * 1000000000 + (end[1] - start[1]),
-	    ms = int(ns / 1000000);
-
-	return (ms > 0) ? ms : 1;
-}
-
-function runProbe() {
-	let address = ARGV[1],
-	    port = int(ARGV[2]),
-	    timeout = int(ARGV[3] || TCPING_TIMEOUT),
-	    start = clock(true),
-	    conn = socket.connect(address, port, null, timeout),
-	    end = clock(true),
-	    delay = clockDiffMs(start, end);
-
-	if (conn !== null) {
-		conn.close();
-		printf('%.J\n', { status: 'ok', delay });
-	} else {
-		printf('%.J\n', {
-			status: (delay >= timeout) ? 'timeout' : 'failed',
-			delay,
-			error: socket.error() || 'connect failed'
-		});
-	}
-
-	exit(0);
-}
-
-if (ARGV[0] === '--probe')
-	runProbe();
-
-function tcpingTarget(cfg) {
-	let node_type = cfg.type || '';
-
-	if (node_type in [ 'direct', 'hysteria', 'hysteria2', 'tuic', 'wireguard' ])
-		return { status: 'unsupported', error: '该节点类型不支持 TCPing' };
-
-	if (cfg.transport === 'quic')
-		return { status: 'unsupported', error: 'QUIC 传输不支持 TCPing' };
-
-	let address = normalizeHost(cfg.address),
-	    port = normalizePort(cfg.port);
-
-	if (node_type === 'shadowsocks' && cfg.shadowtls_enabled !== '0' && !isEmpty(cfg.shadowtls_address)) {
-		address = normalizeHost(cfg.shadowtls_address);
-		port = normalizePort(cfg.shadowtls_port);
-	}
-
-	if (isEmpty(address) || isEmpty(port) || !match(port, /^[0-9]+$/))
-		return { status: 'invalid', error: '缺少地址或端口' };
-
-	return {
-		status: 'ready',
-		address,
-		port: int(port),
-		target: formatHostPort(address, int(port))
-	};
-}
-
-function tcpingNode(cfg) {
-	let target = tcpingTarget(cfg);
-
-	if (target.status !== 'ready')
-		return target;
-
-	let command = sprintf('/usr/bin/ucode %s --probe %s %d %d',
-			shellquote(SELF_PATH),
-			shellquote(target.address),
-			target.port,
-			TCPING_TIMEOUT),
-	    fd = popen(`${command} 2>/dev/null`),
+function clashApiGet(hpuci, path, timeout) {
+	let timeout_sec = int(((timeout || FETCH_TIMEOUT) + 999) / 1000),
+	    controller = controllerBase(hpuci),
+	    secret = hpuci.get('homeproxy', 'config', 'clash_api_secret') || '',
+	    command = sprintf('/usr/bin/wget -qO- -T %d --no-proxy %s %s',
+			timeout_sec,
+			secret ? sprintf('--header %s', shellquote('Authorization: Bearer ' + secret)) : '',
+			shellquote(controller + path)),
+	    fd = popen(command + ' 2>/dev/null'),
 	    out = '';
 
 	if (fd) {
@@ -120,43 +44,120 @@ function tcpingNode(cfg) {
 		fd.close();
 	}
 
-	let result = json(trim(out) || '{}');
+	try {
+		return json(trim(out) || '{}');
+	} catch (e) {
+		return {};
+	}
+}
 
-	if (type(result) !== 'object' || !result.status)
-		return { status: 'failed', target: target.target, error: 'TCPing 子进程无有效结果' };
+function groupDelayPath() {
+	return sprintf('/group/%s/delay?timeout=%d&url=%s',
+		urlencode(DELAY_TEST_SELECTOR),
+		DELAY_TIMEOUT,
+		urlencode(DELAY_TEST_URL));
+}
 
-	result.target = target.target;
-	return result;
+function groupDelayTimeout() {
+	let timeout = DELAY_TIMEOUT * 2 + 10000;
+
+	return (timeout > FETCH_TIMEOUT) ? timeout : FETCH_TIMEOUT;
+}
+
+function parseGroupDelayResult(result) {
+	let delays = {},
+	    has_result = false,
+	    error = '';
+
+	if (type(result) !== 'object')
+		return { delays, has_result, error: '连通性测试无结果' };
+
+	error = result.message || result.error || '';
+
+	for (let name in keys(result)) {
+		let delay = result[name];
+
+		if (type(delay) === 'int' || type(delay) === 'double') {
+			delays[name] = int(delay);
+			has_result = true;
+		}
+	}
+
+	return { delays, has_result, error };
 }
 
 const methods = {
 	nodes_tcping: {
 		args: { sections: [] },
 		call: function(req) {
-			let sections = req.args?.sections;
+			let sections = req.args ? req.args.sections : null;
 			if (type(sections) !== 'array')
 				return { result: false, error: 'illegal sections' };
 
 			const hpuci = cursor();
-			let configured_nodes = {},
-			    nodes = {},
-			    tested = 0;
+			let nodes = {},
+			    tested = 0,
+			    tags = [],
+			    warning = '';
 
 			hpuci.load('homeproxy');
-			hpuci.foreach('homeproxy', 'node', (cfg) => {
-				configured_nodes[cfg['.name']] = cfg;
-			});
 
-			for (let section in sections) {
+			for (let i = 0; i < length(sections); i++) {
+				let section = sections[i];
 				if (++tested > TCPING_MAX_NODES)
 					nodes[section] = { status: 'skipped', error: sprintf('一次最多测试 %d 个节点', TCPING_MAX_NODES) };
 				else {
-					let cfg = configured_nodes[section];
-					nodes[section] = cfg ? tcpingNode(cfg) : { status: 'missing', error: '节点不存在' };
+					let cfg = hpuci.get_all('homeproxy', section);
+					if (!cfg) {
+						nodes[section] = { status: 'missing', error: '节点不存在' };
+					} else if (cfg.type in ['direct', 'block']) {
+						nodes[section] = {
+							status: 'unsupported',
+							target: 'cfg-' + section + '-out',
+							error: '直连或阻断节点不测速'
+						};
+					} else {
+						push(tags, 'cfg-' + section + '-out');
+					}
 				}
 			}
 
-			return { result: true, nodes };
+			if (length(tags)) {
+				let parsed = parseGroupDelayResult(clashApiGet(hpuci, groupDelayPath(), groupDelayTimeout()));
+
+				if (!parsed.has_result)
+					warning = parsed.error || '本次连通性测试未返回结果，已保留原显示。';
+
+				for (let i = 0; i < length(sections); i++) {
+					let section = sections[i],
+					    tag = 'cfg-' + section + '-out',
+					    delay = parsed.delays[tag];
+
+					if (nodes[section])
+						continue;
+
+					if (type(delay) === 'int' || type(delay) === 'double')
+						nodes[section] = { status: 'ok', delay: int(delay), target: tag };
+					else
+						nodes[section] = {
+							status: 'unchanged',
+							target: tag,
+							error: parsed.has_result ? '本次未返回结果' : warning
+						};
+				}
+			}
+
+			for (let i = 0; i < length(sections); i++) {
+				let section = sections[i];
+				if (!nodes[section])
+					nodes[section] = {
+						status: 'unchanged',
+						target: 'cfg-' + section + '-out',
+						error: '本次未返回结果'
+					};
+			}
+
+			return { result: true, nodes, warning };
 		}
 	}
 };

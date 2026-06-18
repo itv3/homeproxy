@@ -183,6 +183,8 @@ const clash_api_enabled = uci.get(uciconfig, ucimain, 'clash_api_enabled') || '0
       clash_api_default_mode = uci.get(uciconfig, ucimain, 'clash_api_default_mode') || 'Rule',
       clash_api_allow_origin = uci.get(uciconfig, ucimain, 'clash_api_allow_origin') || [],
       clash_api_allow_private_network = uci.get(uciconfig, ucimain, 'clash_api_allow_private_network') || '1';
+
+const delay_test_selector_tag = '__homeproxy_delay_test__';
 /* UCI config end */
 
 /* Config helper start */
@@ -470,6 +472,43 @@ function push_node_outbound(client_config, node, tag, routing_cfg) {
 		push(client_config.outbounds, outbound);
 		client_config.outbounds[length(client_config.outbounds)-1].tag = tag;
 	}
+}
+
+function has_outbound_tag(client_config, tag) {
+	for (let outbound in client_config.outbounds)
+		if (outbound.tag === tag)
+			return true;
+
+	if (type(client_config.endpoints) === 'array')
+		for (let endpoint in client_config.endpoints)
+			if (endpoint.tag === tag)
+				return true;
+
+	return false;
+}
+
+function push_delay_test_selector(client_config) {
+	let nodes = [];
+
+	uci.foreach(uciconfig, ucinode, (cfg) => {
+		if (cfg.type in ['direct', 'block'])
+			return;
+
+		const tag = 'cfg-' + cfg['.name'] + '-out';
+
+		if (!has_outbound_tag(client_config, tag))
+			push_node_outbound(client_config, cfg, tag);
+
+		if (has_outbound_tag(client_config, tag) && !~index(nodes, tag))
+			push(nodes, tag);
+	});
+
+	if (length(nodes))
+		push(client_config.outbounds, {
+			type: 'selector',
+			tag: delay_test_selector_tag,
+			outbounds: nodes
+		});
 }
 
 function is_builtin_outbound(target) {
@@ -956,6 +995,8 @@ if (!isEmpty(main_node)) {
 			push_routing_target_outbound(config, cfg.outbound, routing_nodes);
 	});
 }
+
+push_delay_test_selector(config);
 
 if (isEmpty(config.endpoints))
 	config.endpoints = null;

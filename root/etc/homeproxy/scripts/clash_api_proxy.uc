@@ -16,6 +16,7 @@ const uci = cursor();
 const uciconfig = 'homeproxy';
 const ucimain = 'config';
 const shadowtls_suffix = '-out-shadowtls';
+const delay_test_selector_tag = '__homeproxy_delay_test__';
 const filter_timeout = 10000;
 const fallback_delay_limit = 5;
 const upstream_read_timeout = 5;  // seconds; total read deadline for synchronous fetchUpstream
@@ -199,20 +200,24 @@ function isShadowTlsTag(name) {
 		substr(name, length(name) - length(shadowtls_suffix)) === shadowtls_suffix;
 }
 
+function isHiddenProxyTag(name) {
+	return name === delay_test_selector_tag || isShadowTlsTag(name);
+}
+
 function filterProxyItem(item) {
 	if (type(item) !== 'object')
 		return;
 
 	if (type(item.all) === 'array')
-		item.all = filter(item.all, (name) => !isShadowTlsTag(name));
+		item.all = filter(item.all, (name) => !isHiddenProxyTag(name));
 }
 
 function filterProxyArray(items) {
 	return filter(items, (item) => {
 		if (type(item) === 'string')
-			return !isShadowTlsTag(item);
+			return !isHiddenProxyTag(item);
 
-		if (type(item) === 'object' && isShadowTlsTag(item.name))
+		if (type(item) === 'object' && isHiddenProxyTag(item.name))
 			return false;
 
 		filterProxyItem(item);
@@ -228,14 +233,14 @@ function filterProxiesPayload(payload) {
 
 	if (type(payload.proxies) === 'object') {
 		for (let name in keys(payload.proxies)) {
-			if (isShadowTlsTag(name)) {
+			if (isHiddenProxyTag(name)) {
 				delete payload.proxies[name];
 				continue;
 			}
 
-				filterProxyItem(payload.proxies[name]);
-			}
+			filterProxyItem(payload.proxies[name]);
 		}
+	}
 
 	if (type(payload.providers) === 'object') {
 		for (let name in keys(payload.providers)) {
