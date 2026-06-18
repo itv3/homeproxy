@@ -158,16 +158,12 @@ jobs:
 
           ### 本版本变更
 
-          - 加固 Clash API 默认安全边界：将 sing-box 控制器默认绑定回环地址（127.0.0.1），仅经 LAN 侧展示代理（9091）访问；首次启用或升级时自动生成随机 secret 并迁移存量的局域网绑定，消除局域网内无认证调用控制 API 的风险。
-          - 为 Clash API 展示代理的同步上游读取增加读超时（poll + 总死线），避免上游无响应时阻塞事件循环；并在恢复备份后重新执行配置迁移，防止恢复旧备份重新引入暴露在局域网且无鉴权的 Clash API。
-          - 修复安全审计发现的 sing-box generate 命令注入风险，并加固安装脚本信任链、RPC 权限边界和资源版本读取路径校验。
-          - 加固 HomeProxy 备份 / 恢复流程：使用随机临时路径、私有工作目录、SHA-256 清单校验、恢复前完整验证、恢复后 sing-box 运行配置校验、失败自动回滚和敏感文件权限收紧。
-          - 修复路由器端 ucode RPC 初始化顺序问题，确保 `luci.homeproxy` 备份 / 恢复等 RPC 方法可正常注册。
-          - 修复 HomeProxy 升级 / 重载时重复添加 tproxy / tun 路由规则的问题：启动前清理同 mark/table 的旧 `ip rule`，路由表项改为 `replace` 写入，避免 `RTNETLINK answers: File exists` 提示和重复 `fwmark -> table` 规则堆积。
-          - 加固 Clash API 面板代理：限制连接数、请求 / 响应缓冲区和 idle 超时，收紧 CORS Origin，并限制组测速 fallback 数量。
-          - 修复 tproxy / tun 参数初始化条件，增加路由节点循环引用和过深嵌套保护，避免异常配置导致生成器递归失控。
-          - 增强 CI/CD：补充 shell / JavaScript / ucode 语法检查、apk-tools 构建缓存兼容处理，并强化 APK 签名私钥清理。
-          - 清理已完成的临时安全修复状态文档，避免发布分支继续保留过期审计状态说明。
+          - 支持 Surge/Clash 托管配置格式订阅（YAML 风格 `proxies:`），可直接导入 `trojan`、`ss`、`hysteria2` / `hy2`、`anytls` 节点。
+          - 新增 Surge 节点字段映射：Trojan WebSocket、SS2022 + ShadowTLS、UDP-over-TCP、Hysteria2 salamander obfs、port-hopping、ALPN、SNI、skip-cert-verify 等字段会写入 HomeProxy 现有 UCI schema。
+          - 修复 Hysteria2 `port-hopping` 范围格式，将 Surge 的 `start-end` 转换为 sing-box 所需的 `start:end`。
+          - 加固订阅解析边界：仅 Surge 解析分支产出的对象会跳过 URI 解析，避免任意 JSON 对象绕过原有白名单映射；同时保留 JSON、SIP008、Base64 URI 列表和明文 URI 列表原有路径。
+          - 增强 Surge 行解析兼容性：支持 `Name=...` / `Name  =  ...`、大小写不同的 option key、引号内逗号，以及未加引号的多段 `port-hopping`。
+          - 已在 ImmortalWrt 25.12.0 / sing-box 1.12.25 上用真实 Surge 订阅验证，`🇸🇬ss.2022+ShadowTLS` 与 `🇸🇬Hy2` 节点均通过 `sing-box tools fetch` 出站连通测试。
           EOF
 
       - name: Publish GitHub release

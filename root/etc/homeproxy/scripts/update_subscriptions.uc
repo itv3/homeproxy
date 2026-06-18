@@ -473,6 +473,229 @@ function parse_uri(uri) {
 	return config;
 }
 
+/*
+ * 解析单行 Surge 托管配置节点。
+ *
+ * Surge 格式：Name = type, host, port, key=value, key=value, ...
+ * value 可能用双引号包裹（例如 password="..."），引号内也可能包含逗号，
+ * 因此不能直接 split(',')，需要使用识别引号的 tokenizer。字段名沿用
+ * Surge/Clash 约定，并映射到 parse_uri() 产出的同一套内部 schema。
+ */
+function parse_surge_proxy(line) {
+	let config;
+
+	/* Name = <rhs>；允许 '=' 两侧存在任意空白（不只匹配字面量
+	 * " = "），并且只按第一个 '=' 切分，保留 rhs 里的 key=value。 */
+	const eq = index(line, '=');
+	if (eq < 0)
+		return null;
+
+	const label = trim(substr(line, 0, eq));
+	const rhs = trim(substr(line, eq + 1));
+	if (isEmpty(label) || isEmpty(rhs))
+		return null;
+
+	/* 识别双引号的 CSV tokenizer：双引号内的逗号不作为分隔符。 */
+	const tokens = [];
+	let cur = '';
+	let in_quote = false;
+	for (let i = 0; i < length(rhs); i++) {
+		const ch = substr(rhs, i, 1);
+		if (ch == '"')
+			in_quote = !in_quote;
+		else if (ch == ',' && !in_quote) {
+			push(tokens, trim(cur));
+			cur = '';
+		} else
+			cur += ch;
+	}
+	if (length(trim(cur)))
+		push(tokens, trim(cur));
+
+	/* tokens[0] = type，tokens[1] = host，tokens[2] = port，其余为 key=value。 */
+	if (length(tokens) < 3)
+		return null;
+
+	const surge_type = tokens[0];
+	const address = tokens[1];
+	const port = tokens[2];
+
+	/* 将 key=value 选项收集到 map，便于按名称查找。 */
+	const opts = {};
+	let last_key = null;
+	for (let i = 3; i < length(tokens); i++) {
+		const t = tokens[i];
+		const k = index(t, '=');
+		if (k < 0) {
+			/* 不含 '=' 的 token 是未加引号、但自身包含逗号的 value 续段。
+			 * 当前已知只有 port-hopping 会使用逗号分隔的多段范围
+			 * （例如 20000-50000,60000-65000），只把这类续段拼回原值。
+			 * 其他裸 token 直接忽略，避免污染无关选项。 */
+			if (last_key == 'port-hopping')
+				opts[last_key] = opts[last_key] + ',' + t;
+			continue;
+		}
+		/* 统一小写 option key，使查找大小写不敏感（例如 ALPN/alpn）。 */
+		let key = lc(trim(substr(t, 0, k)));
+		let val = trim(substr(t, k + 1));
+		/* 去掉 value 两侧成对的双引号。 */
+		if (length(val) >= 2 && substr(val, 0, 1) == '"' && substr(val, length(val) - 1, 1) == '"')
+			val = substr(val, 1, length(val) - 2);
+		opts[key] = val;
+		last_key = key;
+	}
+
+	/* 将 Surge bool（"true"/"false"）映射为内部使用的 '1'/'0'。 */
+	function bval(v) { return (v == 'true') ? '1' : '0'; }
+
+	switch (surge_type) {
+	case 'trojan':
+		config = {
+			label: label,
+			type: 'trojan',
+			address: address,
+			port: port,
+			password: opts.password,
+			tls: '1',
+			tls_sni: opts.sni,
+			tls_insecure: opts['skip-cert-verify'] ? bval(opts['skip-cert-verify']) : '0',
+			tls_alpn: opts.alpn ? split(opts.alpn, ',') : null
+		};
+		if (opts.ws == 'true') {
+			config.transport = 'ws';
+			config.ws_path = opts['ws-path'];
+			/* ws-headers=Host:"..."（或 Host:...）；当前只映射 Host。 */
+			if (opts['ws-headers']) {
+				const hm = match(opts['ws-headers'], /[Hh]ost\s*:\s*"?([^",]+)/);
+				if (hm)
+					config.ws_host = hm[1];
+			}
+		}
+		break;
+	case 'ss':
+		config = {
+			label: label,
+			type: 'shadowsocks',
+			address: address,
+			port: port,
+			shadowsocks_encrypt_method: opts['encrypt-method'],
+			password: opts.password
+		};
+		/* Surge UDP-over-TCP 映射为 sing-box SUoT。这里显式写入 version：
+		 * 订阅导入会直接写 UCI，不经过 LuCI 表单；如果不写，表单默认值
+		 * udp_over_tcp_version='2' 不会自动出现，generate_client.uc 会拿到空版本。 */
+		if (opts['udp-over-tcp'] == 'true') {
+			config.udp_over_tcp = '1';
+			config.udp_over_tcp_version = '2';
+		}
+		/* ShadowTLS 在 sing-box 中是独立 detour outbound，因此沿用手动节点
+		 * 表单里的 shadowtls_* 字段保存，而不是当作 ss plugin。 */
+		if (opts['shadow-tls-password'] && opts['shadow-tls-sni']) {
+			config.shadowtls_enabled = '1';
+			config.shadowtls_address = address;
+			config.shadowtls_port = port;
+			config.shadowtls_password = opts['shadow-tls-password'];
+			config.shadowtls_sni = opts['shadow-tls-sni'];
+			config.shadowtls_version = opts['shadow-tls-version'] || '3';
+		}
+		break;
+	case 'hysteria2':
+	case 'hy2':
+		if (!sing_features.with_quic) {
+			log(sprintf('Skipping unsupported %s node: %s.', surge_type, label));
+			log(sprintf('Please rebuild sing-box with %s support!', 'QUIC'));
+			return null;
+		}
+		config = {
+			label: label,
+			type: 'hysteria2',
+			address: address,
+			port: port,
+			password: opts.password,
+			hysteria_obfs_type: opts.obfs,
+			hysteria_obfs_password: opts['salamander-password'] || opts['obfs-password'],
+			tls: '1',
+			tls_sni: opts.sni,
+			tls_insecure: opts['skip-cert-verify'] ? bval(opts['skip-cert-verify']) : '0'
+		};
+		if (opts['port-hopping'])
+			/* Surge 的 "start-end[,start-end]" 需要转换为 sing-box server_ports
+			 * 使用的 "start:end"，sing-quic ParsePorts() 要求冒号格式。 */
+			config.hysteria_hopping_port = map(split(opts['port-hopping'], ','),
+				(seg) => replace(trim(seg), '-', ':'));
+		if (opts.alpn)
+			config.tls_alpn = split(opts.alpn, ',');
+		break;
+	case 'anytls':
+		config = {
+			label: label,
+			type: 'anytls',
+			address: address,
+			port: port,
+			password: opts.password,
+			tls: '1',
+			tls_sni: opts.sni,
+			tls_insecure: opts['skip-cert-verify'] ? bval(opts['skip-cert-verify']) : '0'
+		};
+		break;
+	default:
+		log(sprintf('Skipping unsupported Surge proxy type: %s (%s).', surge_type, label));
+		return null;
+	}
+
+	/* 复用 parse_uri() 相同的校验和后处理逻辑。 */
+	if (!isEmpty(config)) {
+		if (config.address)
+			config.address = replace(config.address, /\[|\]/g, '');
+
+		if (!validation('host', config.address) || !validation('port', config.port)) {
+			log(sprintf('Skipping invalid %s node: %s.', config.type, config.label || 'NULL'));
+			return null;
+		}
+	}
+
+	return config;
+}
+
+/*
+ * 将 Surge/Clash 托管配置订阅正文解析为节点数组。
+ * 返回已解析的 config 对象数组，与下游消费 parse_uri 输出的循环保持兼容。
+ */
+function parse_surge_subscription(body) {
+	const lines = split(body, '\n');
+	const nodes = [];
+	let in_proxies = false;
+
+	for (let i = 0; i < length(lines); i++) {
+		const ln = trim(lines[i]);
+
+		/* 只解析 proxies: 段内的节点；允许前导空白，与 catch 块入口正则保持一致。 */
+		if (match(lines[i], /^[ \t]*proxies\s*:/)) {
+			in_proxies = true;
+			continue;
+		}
+		/* 遇到新的顶层 key（无缩进且以 ':' 结尾）时结束 proxies 段。 */
+		if (in_proxies && match(lines[i], /^[A-Za-z0-9_-]+\s*:/) && !match(lines[i], /^\s/))
+			in_proxies = false;
+		if (!in_proxies)
+			continue;
+
+		/* 跳过注释和空行。 */
+		if (isEmpty(ln) || substr(ln, 0, 1) == '#')
+			continue;
+
+		/* 节点行必须包含 key=value 赋值。 */
+		if (index(ln, '=') < 0)
+			continue;
+
+		const cfg = parse_surge_proxy(ln);
+		if (cfg)
+			push(nodes, cfg);
+	}
+
+	return nodes;
+}
+
 function main() {
 	if (via_proxy !== '1') {
 		log('Stopping service...');
@@ -490,7 +713,7 @@ function main() {
 			continue;
 		}
 
-		let nodes;
+		let nodes, parsed_as_surge = false;
 		try {
 			nodes = json(res).servers || json(res);
 
@@ -498,15 +721,29 @@ function main() {
 			if (nodes[0].server && nodes[0].method)
 				map(nodes, (_, i) => nodes[i].nodetype = 'sip008');
 		} catch(e) {
-			nodes = decodeBase64Str(res);
-			nodes = nodes ? split(trim(replace(nodes, / /g, '_')), '\n') : [];
+			/* 先识别 Surge/Clash 托管配置格式（YAML 风格），再回退 Base64。 */
+			if (match(res, /(^|\n)[ \t]*proxies\s*:\s*(#[^\n]*)?(\n|$)/)) {
+				nodes = parse_surge_subscription(res);
+				parsed_as_surge = true;
+			} else {
+				nodes = decodeBase64Str(res);
+				nodes = nodes ? split(trim(replace(nodes, / /g, '_')), '\n') : [];
+			}
 		}
 
 		let count = 0;
 		for (let node in nodes) {
 			let config;
-			if (!isEmpty(node))
-				config = parse_uri(node);
+			if (!isEmpty(node)) {
+				/* 信任边界来自控制流，而不是节点内容：只有 parse_surge_subscription()
+				 * 分支产出的节点才会被当作已解析 config。任意 JSON 中伪造的
+				 * 'nodetype'/'type' 不会绕过 parse_uri()，因为 JSON 路径下
+				 * parsed_as_surge=false，仍然走原有校验和白名单映射。 */
+				if (parsed_as_surge && type(node) == 'object')
+					config = node;
+				else
+					config = parse_uri(node);
+			}
 			if (isEmpty(config))
 				continue;
 
