@@ -13,6 +13,9 @@
 					"connection_check",
 					"resources_get_version",
 					"singbox_get_features"
+				],
+				"luci.homeproxy_tcping": [
+					"nodes_tcping"
 				]
 			},
 			"uci": [ "homeproxy" ]

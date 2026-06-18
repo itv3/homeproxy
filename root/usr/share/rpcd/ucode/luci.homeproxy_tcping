@@ -1,0 +1,164 @@
+#!/usr/bin/ucode
+'use strict';
+
+import * as socket from 'socket';
+import { popen } from 'fs';
+import { cursor } from 'uci';
+
+const TCPING_TIMEOUT = 3000;
+const TCPING_MAX_NODES = 300;
+const SELF_PATH = '/usr/share/rpcd/ucode/luci.homeproxy_tcping';
+
+function shellquote(s) {
+	return `'${replace(s, "'", "'\\''")}'`;
+}
+
+function isEmpty(value) {
+	return !value || value === 'nil' || (type(value) in ['array', 'object'] && length(value) === 0);
+}
+
+function firstValue(value) {
+	return (type(value) === 'array') ? value[0] : value;
+}
+
+function normalizeHost(value) {
+	value = trim(firstValue(value) || '');
+
+	if (length(value) >= 2 && substr(value, 0, 1) === '[' && substr(value, length(value) - 1, 1) === ']')
+		value = substr(value, 1, length(value) - 2);
+
+	return value;
+}
+
+function normalizePort(value) {
+	return trim(sprintf('%s', firstValue(value) || ''));
+}
+
+function formatHostPort(host, port) {
+	return sprintf((index(host, ':') >= 0) ? '[%s]:%d' : '%s:%d', host, port);
+}
+
+function clockDiffMs(start, end) {
+	let ns = (end[0] - start[0]) * 1000000000 + (end[1] - start[1]),
+	    ms = int(ns / 1000000);
+
+	return (ms > 0) ? ms : 1;
+}
+
+function runProbe() {
+	let address = ARGV[1],
+	    port = int(ARGV[2]),
+	    timeout = int(ARGV[3] || TCPING_TIMEOUT),
+	    start = clock(true),
+	    conn = socket.connect(address, port, null, timeout),
+	    end = clock(true),
+	    delay = clockDiffMs(start, end);
+
+	if (conn !== null) {
+		conn.close();
+		printf('%.J\n', { status: 'ok', delay });
+	} else {
+		printf('%.J\n', {
+			status: (delay >= timeout) ? 'timeout' : 'failed',
+			delay,
+			error: socket.error() || 'connect failed'
+		});
+	}
+
+	exit(0);
+}
+
+if (ARGV[0] === '--probe')
+	runProbe();
+
+function tcpingTarget(cfg) {
+	let node_type = cfg.type || '';
+
+	if (node_type in [ 'direct', 'hysteria', 'hysteria2', 'tuic', 'wireguard' ])
+		return { status: 'unsupported', error: '该节点类型不支持 TCPing' };
+
+	if (cfg.transport === 'quic')
+		return { status: 'unsupported', error: 'QUIC 传输不支持 TCPing' };
+
+	let address = normalizeHost(cfg.address),
+	    port = normalizePort(cfg.port);
+
+	if (node_type === 'shadowsocks' && cfg.shadowtls_enabled !== '0' && !isEmpty(cfg.shadowtls_address)) {
+		address = normalizeHost(cfg.shadowtls_address);
+		port = normalizePort(cfg.shadowtls_port);
+	}
+
+	if (isEmpty(address) || isEmpty(port) || !match(port, /^[0-9]+$/))
+		return { status: 'invalid', error: '缺少地址或端口' };
+
+	return {
+		status: 'ready',
+		address,
+		port: int(port),
+		target: formatHostPort(address, int(port))
+	};
+}
+
+function tcpingNode(cfg) {
+	let target = tcpingTarget(cfg);
+
+	if (target.status !== 'ready')
+		return target;
+
+	let command = sprintf('/usr/bin/ucode %s --probe %s %d %d',
+			shellquote(SELF_PATH),
+			shellquote(target.address),
+			target.port,
+			TCPING_TIMEOUT),
+	    fd = popen(`${command} 2>/dev/null`),
+	    out = '';
+
+	if (fd) {
+		for (let line = fd.read('line'); length(line); line = fd.read('line'))
+			out += line;
+
+		fd.close();
+	}
+
+	let result = json(trim(out) || '{}');
+
+	if (type(result) !== 'object' || !result.status)
+		return { status: 'failed', target: target.target, error: 'TCPing 子进程无有效结果' };
+
+	result.target = target.target;
+	return result;
+}
+
+const methods = {
+	nodes_tcping: {
+		args: { sections: [] },
+		call: function(req) {
+			let sections = req.args?.sections;
+			if (type(sections) !== 'array')
+				return { result: false, error: 'illegal sections' };
+
+			const hpuci = cursor();
+			let configured_nodes = {},
+			    nodes = {},
+			    tested = 0;
+
+			hpuci.load('homeproxy');
+			hpuci.foreach('homeproxy', 'node', (cfg) => {
+				configured_nodes[cfg['.name']] = cfg;
+			});
+
+			for (let section in sections) {
+				if (++tested > TCPING_MAX_NODES)
+					nodes[section] = { status: 'skipped', error: sprintf('一次最多测试 %d 个节点', TCPING_MAX_NODES) };
+				else {
+					let cfg = configured_nodes[section];
+					nodes[section] = cfg ? tcpingNode(cfg) : { status: 'missing', error: '节点不存在' };
+				}
+			}
+
+			return { result: true, nodes };
+		}
+	}
+};
+
+return { 'luci.homeproxy_tcping': methods };
