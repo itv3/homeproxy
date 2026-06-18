@@ -80,6 +80,20 @@ function log(...args) {
 	logfile.close();
 }
 
+function uci_value_equal(a, b) {
+	if (type(a) == 'array')
+		a = map(a, (v) => sprintf('%s', v));
+	else
+		a = sprintf('%s', a);
+
+	if (type(b) == 'array')
+		b = map(b, (v) => sprintf('%s', v));
+	else
+		b = sprintf('%s', b);
+
+	return sprintf('%J', a) == sprintf('%J', b);
+}
+
 function parse_uri(uri) {
 	let config, url, params;
 
@@ -790,7 +804,7 @@ function main() {
 		return false;
 	}
 
-	let added = 0, removed = 0;
+	let added = 0, updated = 0, removed = 0;
 	uci.foreach(uciconfig, ucinode, (cfg) => {
 		/* Nodes created by the user */
 		if (!cfg.grouphash)
@@ -806,13 +820,32 @@ function main() {
 
 			log(sprintf('Removing node: %s.', cfg.label || cfg['name']));
 		} else {
+			const node = node_cache[cfg.grouphash][cfg['.name']];
+			let node_changed = false;
+
+			for (let v in node) {
+				if (isEmpty(node[v]))
+					continue;
+
+				if (!(v in cfg) || !uci_value_equal(cfg[v], node[v]))
+					node_changed = true;
+
+				uci.set(uciconfig, cfg['.name'], v, node[v]);
+			}
 			map(keys(cfg), (v) => {
-				if (v in node_cache[cfg.grouphash][cfg['.name']])
-					uci.set(uciconfig, cfg['.name'], v, node_cache[cfg.grouphash][cfg['.name']][v]);
-				else
+				if (substr(v, 0, 1) == '.')
+					return null;
+
+				if (!(v in node) || isEmpty(node[v])) {
 					uci.delete(uciconfig, cfg['.name'], v);
+					node_changed = true;
+				}
 			});
-			node_cache[cfg.grouphash][cfg['.name']].isExisting = true;
+
+			if (node_changed)
+				updated++;
+
+			node.isExisting = true;
 		}
 	});
 	for (let nodes in node_result)
@@ -826,10 +859,10 @@ function main() {
 
 			added++;
 			log(sprintf('Adding node: %s.', node.label));
-		});
+	});
 	uci.commit(uciconfig);
 
-	let need_restart = (via_proxy !== '1');
+	let need_restart = (via_proxy !== '1') || added > 0 || updated > 0 || removed > 0;
 	if (!isEmpty(main_node)) {
 		const first_server = uci.get_first(uciconfig, ucinode);
 		if (first_server) {
@@ -888,7 +921,7 @@ function main() {
 		init_action('homeproxy', 'start');
 	}
 
-	log(sprintf('%s nodes added, %s removed.', added, removed));
+	log(sprintf('%s nodes added, %s updated, %s removed.', added, updated, removed));
 	log('Successfully updated subscriptions.');
 }
 
