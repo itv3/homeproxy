@@ -158,9 +158,10 @@ jobs:
 
           ### 本版本变更
 
-          - 修复 `update_via_proxy=1` 更新订阅后运行中的 HomeProxy 未重新加载配置，导致新订阅节点已写入 UCI 但 Clash API 仍显示“未加入”的问题。
-          - 订阅更新成功后，只要节点存在新增、更新或删除，就会在拉取完成并写入 UCI 后重启 HomeProxy；拉取订阅前仍保持服务运行，避免影响通过代理更新订阅。
-          - 同步已有订阅节点时补齐订阅端新增字段、清理过期字段，并用规范化比较避免无意义重启。
+          - 修复 APK 升级时 `/etc/homeproxy/scripts/*.uc` 被 APK 保护为 `.apk-new`，导致包版本已更新但订阅更新脚本仍停留在旧版本的问题。
+          - 升级后自动合并 `/etc/homeproxy/scripts/*.apk-new` 到正式脚本路径，并恢复脚本执行权限。
+          - 升级后刷新 LuCI 缓存和 `rpcd/uhttpd`，但不再删除 LuCI session，避免当前页面继续操作时报 `PermissionError: Exec permission denied`。
+          - 保留上一版订阅修复：`update_via_proxy=1` 更新订阅后，节点有新增、更新或删除时会在写入 UCI 后重启 HomeProxy，使 Clash API 立即加载新节点。
           EOF
 
       - name: Publish GitHub release
