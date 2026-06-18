@@ -145,10 +145,10 @@ jobs:
         run: |
           pushd .github
           CUSTOM_PKG_NAME="homeproxy-custom" \
-            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
+            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 Surge 格式节点订阅、tcping 测试、SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
             fakeroot bash build-ipk.sh apk "${{ github.event_name }}"
           CUSTOM_PKG_NAME="homeproxy-custom" \
-            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
+            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 Surge 格式节点订阅、tcping 测试、SS2022 + ShadowTLS、Selector 路由节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
             fakeroot bash build-ipk.sh ipk "${{ github.event_name }}"
           popd
 

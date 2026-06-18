@@ -98,6 +98,14 @@ if [ "$PKG_MGR" == "apk" ]; then
 		sha256sum "$TEMP_PKG_DIR/$file" | sed "s,$TEMP_PKG_DIR/,," >> "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.conffiles_static"
 	done
 
+	refresh_luci='[ -n "${IPKG_INSTROOT}" ] || {
+	rm -f /tmp/luci-indexcache /tmp/luci-indexcache.* 2>/dev/null
+	rm -rf /tmp/luci-modulecache/ /tmp/luci-sessions/ 2>/dev/null
+	/etc/init.d/rpcd restart 2>/dev/null || killall -HUP rpcd 2>/dev/null
+	/etc/init.d/uhttpd restart 2>/dev/null || true
+	exit 0
+}'
+
 	echo -e '#!/bin/sh
 [ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
@@ -106,11 +114,7 @@ export root="${IPKG_INSTROOT}"
 export pkgname="'"$PKG_NAME"'"
 add_group_and_user
 default_postinst
-[ -n "${IPKG_INSTROOT}" ] || { rm -f /tmp/luci-indexcache.*
-	rm -rf /tmp/luci-modulecache/
-	killall -HUP rpcd 2>/dev/null
-	exit 0
-}' > "$TEMP_DIR/post-install"
+'"${refresh_luci}" > "$TEMP_DIR/post-install"
 
 	echo -e '#!/bin/sh
 export PKG_UPGRADE=1
@@ -122,11 +126,7 @@ export root="${IPKG_INSTROOT}"
 export pkgname="'"$PKG_NAME"'"
 add_group_and_user
 default_postinst
-[ -n "${IPKG_INSTROOT}" ] || { rm -f /tmp/luci-indexcache.*
-	rm -rf /tmp/luci-modulecache/
-	killall -HUP rpcd 2>/dev/null
-	exit 0
-}' > "$TEMP_DIR/post-upgrade"
+'"${refresh_luci}" > "$TEMP_DIR/post-upgrade"
 
 	echo -e '#!/bin/sh
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
