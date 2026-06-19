@@ -767,7 +767,7 @@ return view.extend({
 		so.modalonly = true;
 
 		so = ss.option(form.Value, 'node_filter', _('Node regex'),
-			_('Automatically include proxy nodes whose label matches this regex.'));
+			_('Automatically include proxy nodes whose labels match this regex. Effective nodes are recalculated after saving and applying manual node changes or after subscription updates finish.'));
 		so.depends('node', 'urltest');
 		so.depends('node', 'selector');
 		so.forcewrite = true;

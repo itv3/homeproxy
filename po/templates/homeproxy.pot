@@ -231,7 +231,7 @@ msgid "Auto update subscriptions and geodata."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:698
-msgid "Automatically include proxy nodes whose label matches this regex."
+msgid "Automatically include proxy nodes whose labels match this regex. Effective nodes are recalculated after saving and applying manual node changes or after subscription updates finish."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:751

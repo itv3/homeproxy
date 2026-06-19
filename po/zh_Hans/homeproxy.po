@@ -242,8 +242,8 @@ msgid "Auto update subscriptions and geodata."
 msgstr "自动更新订阅和地理数据。"
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:698
-msgid "Automatically include proxy nodes whose label matches this regex."
-msgstr "自动包含标签命中该正则的代理节点。"
+msgid "Automatically include proxy nodes whose labels match this regex. Effective nodes are recalculated after saving and applying manual node changes or after subscription updates finish."
+msgstr "按标签正则自动包含代理节点；手动增删改节点后保存并应用，或订阅手动/定时更新完成后，会自动重新计算生效节点。"
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:751
 msgid "Effective nodes"
