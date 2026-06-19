@@ -230,6 +230,14 @@ msgstr ""
 msgid "Auto update subscriptions and geodata."
 msgstr ""
 
+#: htdocs/luci-static/resources/view/homeproxy/client.js:698
+msgid "Automatically include proxy nodes whose label matches this regex."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:751
+msgid "Effective nodes"
+msgstr ""
+
 #: htdocs/luci-static/resources/view/homeproxy/node.js:702
 msgid "BBR"
 msgstr ""
@@ -492,6 +500,10 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/server.js:606
 msgid "Default server name"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:731
+msgid "Default selector node"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:364
@@ -1263,10 +1275,18 @@ msgid ""
 "List of IP (v4 or v6) addresses prefixes to be assigned to the interface."
 msgstr ""
 
+#: htdocs/luci-static/resources/view/homeproxy/client.js:683
+msgid "List of manually selectable nodes."
+msgstr ""
+
 #: htdocs/luci-static/resources/view/homeproxy/client.js:132
 #: htdocs/luci-static/resources/view/homeproxy/client.js:161
 #: htdocs/luci-static/resources/view/homeproxy/client.js:497
 msgid "List of nodes to test."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:752
+msgid "Loading..."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/node.js:1036
@@ -1592,6 +1612,10 @@ msgstr ""
 msgid "No additional encryption support: It's basically duplicate encryption."
 msgstr ""
 
+#: htdocs/luci-static/resources/view/homeproxy/client.js:269
+msgid "No effective nodes."
+msgstr ""
+
 #: htdocs/luci-static/resources/view/homeproxy/node.js:1412
 msgid "No subscription available"
 msgstr ""
@@ -1607,6 +1631,10 @@ msgstr ""
 #: htdocs/luci-static/resources/view/homeproxy/client.js:419
 #: htdocs/luci-static/resources/view/homeproxy/node.js:396
 msgid "Node"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:697
+msgid "Node regex"
 msgstr ""
 
 #: root/usr/share/luci/menu.d/luci-app-homeproxy.json:22
@@ -2141,6 +2169,10 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/server.js:151
 msgid "Server settings"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:682
+msgid "Selector nodes"
 msgstr ""
 
 #: root/usr/share/luci/menu.d/luci-app-homeproxy.json:38
@@ -3031,6 +3063,10 @@ msgstr ""
 
 #: htdocs/luci-static/resources/homeproxy.js:271
 msgid "valid base64 key with %d characters"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:708
+msgid "valid regular expression"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:1507

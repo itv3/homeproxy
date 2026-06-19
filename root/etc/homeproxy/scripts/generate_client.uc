@@ -584,6 +584,42 @@ function is_node_section(target) {
 	return node['.type'] === ucinode;
 }
 
+function append_unique_node(nodes, node_id) {
+	if (!isEmpty(node_id) && !~index(nodes, node_id))
+		push(nodes, node_id);
+}
+
+function expand_node_filter(manual_nodes, node_filter, owner) {
+	let nodes = [];
+
+	if (type(manual_nodes) === 'array')
+		for (let i in manual_nodes)
+			append_unique_node(nodes, i);
+	else
+		append_unique_node(nodes, manual_nodes);
+
+	if (isEmpty(node_filter))
+		return nodes;
+
+	let pattern;
+	try {
+		pattern = regexp(node_filter);
+	} catch(e) {
+		reportError('error',
+			sprintf('路由节点 %s 的节点正则无效：%s', owner, e.message || e),
+			'请修正节点正则，或清空该字段后重新生成配置');
+		return nodes;
+	}
+
+	uci.foreach(uciconfig, ucinode, (cfg) => {
+		const label = cfg.label || cfg['.name'];
+		if (match(label, pattern))
+			append_unique_node(nodes, cfg['.name']);
+	});
+
+	return nodes;
+}
+
 function get_routing_target_outbound(target) {
 	const match_target = match(target || '', /^cfg-(.+)-out$/);
 	if (match_target)
@@ -1023,26 +1059,44 @@ if (!isEmpty(main_node)) {
 			return;
 
 		if (cfg.node === 'urltest') {
+			const owner = cfg.label || cfg['.name'];
+			const urltest_nodes = expand_node_filter(cfg.urltest_nodes, cfg.node_filter, owner);
+			if (!length(urltest_nodes)) {
+				reportError('error',
+					sprintf('路由节点 %s 没有可用节点', owner),
+					'请手动选择节点，或填写能命中节点名称的节点正则');
+				return;
+			}
+
 			push(config.outbounds, {
 				type: 'urltest',
 				tag: 'cfg-' + cfg['.name'] + '-out',
-				outbounds: map(cfg.urltest_nodes, (k) => `cfg-${k}-out`),
+				outbounds: map(urltest_nodes, (k) => `cfg-${k}-out`),
 				url: cfg.urltest_url,
 				interval: strToTime(cfg.urltest_interval),
 				tolerance: strToInt(cfg.urltest_tolerance),
 				idle_timeout: strToTime(cfg.urltest_idle_timeout),
 				interrupt_exist_connections: strToBool(cfg.urltest_interrupt_exist_connections)
 			});
-			group_nodes = [...group_nodes, ...filter(cfg.urltest_nodes, (l) => !~index(group_nodes, l))];
+			group_nodes = [...group_nodes, ...filter(urltest_nodes, (l) => !~index(group_nodes, l))];
 		} else if (cfg.node === 'selector') {
+			const owner = cfg.label || cfg['.name'];
+			const selector_nodes = expand_node_filter(cfg.selector_nodes, cfg.node_filter, owner);
+			if (!length(selector_nodes)) {
+				reportError('error',
+					sprintf('路由节点 %s 没有可用节点', owner),
+					'请手动选择节点，或填写能命中节点名称的节点正则');
+				return;
+			}
+
 			push(config.outbounds, {
 				type: 'selector',
 				tag: 'cfg-' + cfg['.name'] + '-out',
-				outbounds: map(cfg.selector_nodes, get_routing_target_outbound),
+				outbounds: map(selector_nodes, get_routing_target_outbound),
 				default: get_routing_target_outbound(cfg.selector_default),
 				interrupt_exist_connections: strToBool(cfg.selector_interrupt_exist_connections)
 			});
-			group_nodes = [...group_nodes, ...filter(cfg.selector_nodes, (l) => !~index(group_nodes, l))];
+			group_nodes = [...group_nodes, ...filter(selector_nodes, (l) => !~index(group_nodes, l))];
 		} else {
 			const outbound = uci.get_all(uciconfig, cfg.node) || {};
 			push_node_outbound(config, outbound, 'cfg-' + cfg.node + '-out', cfg);

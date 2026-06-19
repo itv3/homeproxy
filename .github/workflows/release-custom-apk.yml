@@ -158,9 +158,9 @@ jobs:
 
           ### 本版本变更
 
-          - 订阅导入 Surge/Clash Hysteria2 节点时，如果节点带有 `server-cert-fingerprint-sha256`，但当前 sing-box 版本低于 1.13.0、无法表达证书公钥 SHA256 校验，则自动启用 `tls_insecure` 兼容降级。
-          - 订阅导入 Hysteria2 URI 时，如果节点带有 `pinSHA256`，也按同样规则兼容处理。
-          - 自动降级时写入订阅日志，说明该节点因当前 sing-box 版本无法表达证书 fingerprint 而启用 TLS insecure fallback。
+          - 路由节点的 `selector` / `urltest` 支持新增“节点正则”字段，可按代理节点标签自动筛选并纳入节点。
+          - 最终生效节点为“手选节点 + 正则命中节点”，自动合并去重，并可在 LuCI 页面预览。
+          - 正则校验由路由器端 ucode `regexp()` 完成，避免前端 JavaScript 与实际运行端正则语义不一致。
           EOF
 
       - name: Publish GitHub release

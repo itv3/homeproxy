@@ -5,6 +5,7 @@
  */
 
 'use strict';
+'require dom';
 'require form';
 'require network';
 'require poll';
@@ -52,6 +53,36 @@ const callWriteDomainList = rpc.declare({
 	params: ['type', 'content'],
 	expect: { '': {} }
 });
+
+const callValidateRegex = rpc.declare({
+	object: 'luci.homeproxy',
+	method: 'validate_regex',
+	params: ['pattern'],
+	expect: { '': {} }
+});
+
+const callPreviewNodeFilter = rpc.declare({
+	object: 'luci.homeproxy',
+	method: 'preview_node_filter',
+	params: ['manual_nodes', 'node_filter'],
+	expect: { '': {} }
+});
+
+function normalizeNodeList(value) {
+	let nodes = [];
+
+	if (value == null)
+		return nodes;
+
+	if (!Array.isArray(value))
+		value = [ value ];
+
+	for (let i = 0; i < value.length; i++)
+		if (value[i] && !nodes.includes(value[i]))
+			nodes.push(value[i]);
+
+	return nodes;
+}
 
 function getServiceStatus() {
 	return L.resolveDefault(callServiceList('homeproxy'), {}).then((res) => {
@@ -221,6 +252,45 @@ return view.extend({
 				if (res.enabled === '1' && res['.name'] !== section_id)
 					option.value(res['.name'], routingNodeName(res));
 			});
+		};
+
+		let routing_node_names = {};
+		uci.sections(data[0], 'routing_node', (res) => {
+			routing_node_names[res['.name']] = routingNodeName(res);
+		});
+
+		let nodeFilterPreviewName = function(node_id) {
+			return proxy_nodes[node_id] || routing_node_names[node_id] || node_id;
+		};
+
+		let setNodeFilterPreviewVisible = function(container, visible) {
+			let row = container.closest('.cbi-value');
+			if (row)
+				row.style.display = visible ? '' : 'none';
+		};
+
+		let renderNodeFilterPreview = function(container, res) {
+			if (!res.result) {
+				let message = _('Expecting: %s').format(_('valid regular expression'));
+				if (res.error)
+					message += ': ' + res.error;
+
+				dom.content(container, E('em', { 'style': 'color: #a33' }, message));
+				return;
+			}
+
+			let nodes = normalizeNodeList(res.nodes);
+
+			if (!nodes.length) {
+				dom.content(container, E('em', {}, _('No effective nodes.')));
+				return;
+			}
+
+			dom.content(container, E('ul', {
+				'style': 'margin: 0; padding-left: 1.4em; max-height: 28em; overflow: auto;'
+			}, nodes.map((node_id) => E('li', {
+				'title': node_id
+			}, nodeFilterPreviewName(node_id)))));
 		};
 
 		let pathCache = {};
@@ -663,8 +733,9 @@ return view.extend({
 			so.value(i, proxy_nodes[i]);
 		so.depends('node', 'urltest');
 		so.validate = function(section_id) {
-			let value = this.section.formvalue(section_id, 'urltest_nodes');
-			if (section_id && !value.length)
+			let value = this.section.formvalue(section_id, 'urltest_nodes') || [];
+			let node_filter = this.section.formvalue(section_id, 'node_filter');
+			if (section_id && !value.length && !node_filter)
 				return _('Expecting: %s').format(_('non-empty value'));
 
 			return true;
@@ -683,14 +754,109 @@ return view.extend({
 		}
 		so.depends('node', 'selector');
 		so.validate = function(section_id) {
-			let value = this.section.formvalue(section_id, 'selector_nodes');
-			if (section_id && !value.length)
+			let value = this.section.formvalue(section_id, 'selector_nodes') || [];
+			let node_filter = this.section.formvalue(section_id, 'node_filter');
+			if (section_id && !value.length && !node_filter)
 				return _('Expecting: %s').format(_('non-empty value'));
 			for (let i in value)
 				if (selectorHasPath(value[i], section_id, {}))
 					return _('Recursive outbound detected!');
 
 			return true;
+		}
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'node_filter', _('Node regex'),
+			_('Automatically include proxy nodes whose label matches this regex.'));
+		so.depends('node', 'urltest');
+		so.depends('node', 'selector');
+		so.forcewrite = true;
+		so.write = function(section_id, value) {
+			// LuCI 的字段校验是同步的，RPC 校验放在 write() 里让保存流程等待结果。
+			return L.resolveDefault(callValidateRegex(value), { result: false, error: _('Unknown error.') }).then((res) => {
+				if (!res.result) {
+					let message = _('Expecting: %s').format(_('valid regular expression'));
+					if (res.error)
+						message += ': ' + res.error;
+
+					return Promise.reject(new TypeError(message));
+				}
+
+				return this.map.data.set(
+					this.uciconfig ?? this.section.uciconfig ?? this.map.config,
+					this.ucisection ?? section_id,
+					this.ucioption ?? this.option,
+					value);
+			});
+		}
+		so.modalonly = true;
+
+		so = ss.option(form.DummyValue, '_node_filter_preview', _('Effective nodes'));
+		so.depends('node', 'urltest');
+		so.depends('node', 'selector');
+		so.renderWidget = function(section_id) {
+			let container = E('div', { 'class': 'homeproxy-node-filter-preview' });
+			let request_id = 0,
+			    timer = null;
+
+			let refresh = () => {
+				if (!document.body.contains(container))
+					return;
+
+				let current_id = ++request_id,
+				    node = this.section.formvalue(section_id, 'node'),
+				    node_filter = this.section.formvalue(section_id, 'node_filter') || '',
+				    manual_nodes = [];
+
+				if (!String(node_filter).trim()) {
+					setNodeFilterPreviewVisible(container, false);
+					dom.content(container, '');
+					return;
+				}
+
+				setNodeFilterPreviewVisible(container, true);
+				dom.content(container, _('Loading...'));
+
+				if (node === 'urltest')
+					manual_nodes = normalizeNodeList(this.section.formvalue(section_id, 'urltest_nodes'));
+				else if (node === 'selector')
+					manual_nodes = normalizeNodeList(this.section.formvalue(section_id, 'selector_nodes'));
+
+				L.resolveDefault(callPreviewNodeFilter(
+					manual_nodes,
+					node_filter
+				), { result: false, error: _('Unknown error.') }).then((res) => {
+					if (current_id === request_id)
+						renderNodeFilterPreview(container, res);
+				});
+			};
+
+			let schedule = () => {
+				if (!document.body.contains(container))
+					return;
+
+				if (timer)
+					window.clearTimeout(timer);
+
+				timer = window.setTimeout(refresh, 150);
+			};
+
+			window.setTimeout(() => {
+				let scope = container.closest('.cbi-modal') ||
+					container.closest('.modal') ||
+					container.closest('.cbi-section') ||
+					container.parentNode;
+
+				if (scope) {
+					scope.addEventListener('input', schedule, true);
+					scope.addEventListener('change', schedule, true);
+					scope.addEventListener('click', schedule, true);
+				}
+
+				schedule();
+			});
+
+			return container;
 		}
 		so.modalonly = true;
 

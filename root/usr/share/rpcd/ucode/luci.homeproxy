@@ -68,6 +68,42 @@ function firstValue(value) {
 	return (type(value) === 'array') ? value[0] : value;
 }
 
+function appendUniqueNode(nodes, node_id) {
+	if (!isEmpty(node_id) && !~index(nodes, node_id))
+		push(nodes, node_id);
+}
+
+function expandNodeFilterPreview(manual_nodes, node_filter) {
+	const hpuci = cursor();
+	let nodes = [];
+
+	if (type(manual_nodes) === 'array') {
+		for (let node_id in manual_nodes)
+			appendUniqueNode(nodes, node_id);
+	} else {
+		appendUniqueNode(nodes, manual_nodes);
+	}
+
+	if (isEmpty(node_filter))
+		return { result: true, nodes: nodes };
+
+	let pattern;
+	try {
+		pattern = regexp(node_filter);
+	} catch(e) {
+		return { result: false, error: e.message || sprintf('%s', e) };
+	}
+
+	hpuci.load('homeproxy');
+	hpuci.foreach('homeproxy', 'node', (cfg) => {
+		const label = cfg.label || cfg['.name'];
+		if (match(label, pattern))
+			appendUniqueNode(nodes, cfg['.name']);
+	});
+
+	return { result: true, nodes: nodes };
+}
+
 function stripCidr(value) {
 	return replace(trim(firstValue(value) || ''), /\/.*$/, '');
 }
@@ -677,6 +713,30 @@ const methods = {
 			}
 
 			return { result: (system(`/usr/bin/wget --spider -qT3 ${url} 2>"/dev/null"`, 3100) === 0) };
+		}
+	},
+
+	validate_regex: {
+		args: { pattern: 'pattern' },
+		call: function(req) {
+			const pattern = firstValue(req.args?.pattern);
+
+			if (isEmpty(pattern))
+				return { result: true };
+
+			try {
+				regexp(pattern);
+				return { result: true };
+			} catch(e) {
+				return { result: false, error: e.message || sprintf('%s', e) };
+			}
+		}
+	},
+
+	preview_node_filter: {
+		args: { manual_nodes: [], node_filter: 'node_filter' },
+		call: function(req) {
+			return expandNodeFilterPreview(req.args?.manual_nodes, firstValue(req.args?.node_filter));
 		}
 	},
 
