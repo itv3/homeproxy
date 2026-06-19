@@ -41,6 +41,8 @@
    - 路由节点类型新增 `Selector`。
    - Selector 可包含具体代理节点。
    - Selector 也可包含已有路由节点，例如 `Proxy_Auto`。
+   - `Selector` / `URLTest` 路由节点支持“节点正则”，可按代理节点标签自动筛选节点，并与手选节点合并去重。
+   - LuCI 会预览正则命中后的生效节点，便于确认实际进入路由节点的代理列表。
    - 增加递归引用检查，避免路由节点互相引用形成循环。
 
 3. 路由规则直选节点
@@ -273,6 +275,7 @@ root/etc/config/homeproxy
 - SS2022 + ShadowTLS 表单和生成逻辑。
 - 路由节点 Selector。
 - Selector 可包含具体节点和已有路由节点。
+- Selector / URLTest 路由节点支持按节点名称正则筛选节点。
 - 路由规则可直接选择具体节点。
 - Clash API 默认配置、面板代理和 MetaCubeXD `打开面板` 入口。
 
