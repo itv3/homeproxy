@@ -77,13 +77,20 @@
    - MetaCubeXD / Yacd 读取出站列表时会隐藏 `cfg-xxx-out-shadowtls` 中间层节点。
    - 隐藏的只是 SS2022 + ShadowTLS 生成链路中的中间层节点，不影响真实代理节点和节点切换。
 
-8. 自定义 Release 自动发布
+8. 运行时 outbound tag 映射为节点真实名称
+
+   - 生成 sing-box 配置时，将运行时 outbound tag 从 `cfg-<section>-out` 映射为节点 `label`。
+   - MetaCubeXD / Yacd / Clash API / LuCI 节点测速会显示真实节点名称，便于识别和排障。
+   - 同名节点、保留 tag、内部 `cfg-*` 命名空间冲突时，会生成稳定后缀，避免重复 tag。
+   - ShadowTLS 中间层会同步映射，且仍由 HomeProxy 面板代理隐藏。
+
+9. 自定义 Release 自动发布
 
    - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
    - 打 `custom-*` tag 后会现场构建内置中文翻译的签名 APK 和 v3 软件源索引，并自动发布到 GitHub Releases。
    - 一键安装会自动导入公钥、配置软件源并安装 / 升级 HomeProxy。
 
-9. 定时检查上游更新
+10. 定时检查上游更新
 
    - GitHub Actions 每天检查一次 `immortalwrt/homeproxy:master`。
    - 如果上游有新提交，会创建或更新带 `upstream-update` 标签的 Issue。
@@ -266,6 +273,7 @@ git merge upstream/master
 htdocs/luci-static/resources/view/homeproxy/client.js
 htdocs/luci-static/resources/view/homeproxy/node.js
 root/etc/homeproxy/scripts/generate_client.uc
+root/etc/homeproxy/scripts/outbound_tag.uc
 root/etc/homeproxy/scripts/migrate_config.uc
 root/etc/config/homeproxy
 ```
@@ -278,6 +286,7 @@ root/etc/config/homeproxy
 - Selector / URLTest 路由节点支持按节点名称正则筛选节点。
 - 路由规则可直接选择具体节点。
 - Clash API 默认配置、面板代理和 MetaCubeXD `打开面板` 入口。
+- 运行时 outbound tag 映射为节点真实名称。
 
 ### 2. 本地检查
 

@@ -4,7 +4,10 @@
 import { popen } from 'fs';
 import { cursor } from 'uci';
 
+import { build_outbound_tag_map } from '/etc/homeproxy/scripts/outbound_tag.uc';
+
 const TCPING_MAX_NODES = 300;
+const SECTION_MAX_LEN = 128;
 const DELAY_TIMEOUT = 5000;
 const FETCH_TIMEOUT = 30000;
 const DELAY_TEST_URL = 'https://www.gstatic.com/generate_204';
@@ -99,6 +102,17 @@ function loadedProxyTags(hpuci) {
 	return tags;
 }
 
+function nodeTag(tag_map, section) {
+	return tag_map[section] || ('cfg-' + section + '-out');
+}
+
+function validSectionName(section) {
+	return type(section) === 'string' &&
+	       section !== '' &&
+	       length(section) <= SECTION_MAX_LEN &&
+	       match(section, /^[A-Za-z0-9_]+$/);
+}
+
 const methods = {
 	nodes_tcping: {
 		args: { sections: [] },
@@ -111,27 +125,35 @@ const methods = {
 			let nodes = {},
 			    tested = 0,
 			    tags = [],
+			    seen_sections = {},
 			    loaded = null,
 			    warning = '';
 
 			hpuci.load('homeproxy');
+			let tag_map = build_outbound_tag_map(hpuci);
 
 			for (let i = 0; i < length(sections); i++) {
 				let section = sections[i];
+				if (!validSectionName(section))
+					return { result: false, error: 'illegal section' };
+				if (seen_sections[section])
+					continue;
+				seen_sections[section] = true;
+
 				if (++tested > TCPING_MAX_NODES)
 					nodes[section] = { status: 'skipped', error: sprintf('一次最多测试 %d 个节点', TCPING_MAX_NODES) };
 				else {
 					let cfg = hpuci.get_all('homeproxy', section);
-					if (!cfg) {
+					if (!cfg || cfg['.type'] !== 'node') {
 						nodes[section] = { status: 'missing', error: '节点不存在' };
 					} else if (cfg.type in ['direct', 'block']) {
 						nodes[section] = {
 							status: 'unsupported',
-							target: 'cfg-' + section + '-out',
+							target: nodeTag(tag_map, section),
 							error: '直连或阻断节点不测速'
 						};
 					} else {
-						push(tags, 'cfg-' + section + '-out');
+						push(tags, nodeTag(tag_map, section));
 					}
 				}
 			}
@@ -150,7 +172,7 @@ const methods = {
 
 				for (let i = 0; i < length(sections); i++) {
 					let section = sections[i],
-					    tag = 'cfg-' + section + '-out',
+					    tag = nodeTag(tag_map, section),
 					    delay = parsed.delays[tag];
 
 					if (nodes[section])
@@ -175,10 +197,12 @@ const methods = {
 
 			for (let i = 0; i < length(sections); i++) {
 				let section = sections[i];
+				if (seen_sections[section] !== true)
+					continue;
 				if (!nodes[section])
 					nodes[section] = {
 						status: 'unchanged',
-						target: 'cfg-' + section + '-out',
+						target: nodeTag(tag_map, section),
 						error: '本次未返回结果'
 					};
 			}

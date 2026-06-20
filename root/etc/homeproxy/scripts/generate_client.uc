@@ -16,6 +16,7 @@ import {
 	isEmpty, parseURL, strToBool, strToInt, strToTime,
 	removeBlankAttrs, shellQuote, validation, HP_DIR, RUN_DIR
 } from 'homeproxy';
+import { build_outbound_tag_map } from 'outbound_tag';
 
 // Configuration error collection
 let config_errors = [];
@@ -733,6 +734,68 @@ function get_ruleset(cfg) {
 		push(rules, isEmpty(i) ? null : 'cfg-' + i + '-rule');
 	return rules;
 }
+
+function rename_tags(value, rename) {
+	let t = type(value);
+
+	if (t === 'object') {
+		for (let k in value)
+			value[k] = rename_tags(value[k], rename);
+		return value;
+	}
+
+	if (t === 'array') {
+		for (let i = 0; i < length(value); i++)
+			value[i] = rename_tags(value[i], rename);
+		return value;
+	}
+
+	if (t === 'string')
+		return (value in rename) ? rename[value] : value;
+
+	return value;
+}
+
+function apply_outbound_tag_rename(client_config) {
+	let tag_map = build_outbound_tag_map(uci),
+	    rename = {};
+
+	for (let section in tag_map) {
+		let old_tag = 'cfg-' + section + '-out',
+		    final_tag = tag_map[section];
+
+		rename[old_tag] = final_tag;
+		rename[old_tag + '-shadowtls'] = final_tag + '-out-shadowtls';
+	}
+
+	rename_tags(client_config, rename);
+}
+
+function assert_unique_outbound_tags(client_config) {
+	let seen = {};
+
+	for (let outbound in (client_config.outbounds || [])) {
+		let tag = (type(outbound) === 'object') ? outbound.tag : null;
+		if (tag === null)
+			continue;
+		if (seen[tag])
+			reportError('error',
+				sprintf('rename 后出现重复 outbound tag: %s', tag),
+				'通常意味着去重算法异常；请附带节点 label / section 列表反馈');
+		seen[tag] = true;
+	}
+
+	for (let endpoint in (client_config.endpoints || [])) {
+		let tag = (type(endpoint) === 'object') ? endpoint.tag : null;
+		if (tag === null)
+			continue;
+		if (seen[tag])
+			reportError('error',
+				sprintf('rename 后出现重复 outbound tag: %s', tag),
+				'通常意味着去重算法异常；请附带节点 label / section 列表反馈');
+		seen[tag] = true;
+	}
+}
 /* Config helper end */
 
 const config = {};
@@ -1313,6 +1376,9 @@ if (strToBool(clash_api_enabled))
 if (isEmpty(config.experimental))
 	config.experimental = null;
 /* Experimental end */
+
+apply_outbound_tag_rename(config);
+assert_unique_outbound_tags(config);
 
 // Check for configuration errors. Fatal errors (e.g. routing cycles) must NOT
 // overwrite the existing sing-box-c.json with an invalid config: that would make
