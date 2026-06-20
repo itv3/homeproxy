@@ -271,6 +271,18 @@ return view.extend({
 			return proxy_nodes[node_id] || routing_node_names[node_id] || node_id;
 		};
 
+		let currentOptionValue = function(section, section_id, option, fallback) {
+			let opt = section.map.lookupOption(option, section_id)?.[0];
+			if (opt) {
+				let value = opt.formvalue(section_id);
+				if (value != null)
+					return value;
+			}
+
+			let value = section.formvalue(section_id, option);
+			return (value != null) ? value : fallback;
+		};
+
 		let setNodeFilterPreviewVisible = function(container, visible) {
 			let row = container.closest('.cbi-value');
 			if (row)
@@ -741,8 +753,8 @@ return view.extend({
 			so.value(i, proxy_nodes[i]);
 		so.depends('node', 'urltest');
 		so.validate = function(section_id) {
-			let value = this.section.formvalue(section_id, 'urltest_nodes') || [];
-			let node_filter = this.section.formvalue(section_id, 'node_filter');
+			let value = normalizeNodeList(currentOptionValue(this.section, section_id, 'urltest_nodes', []));
+			let node_filter = currentOptionValue(this.section, section_id, 'node_filter', '');
 			if (section_id && !value.length && !node_filter)
 				return _('Expecting: %s').format(_('non-empty value'));
 
@@ -762,8 +774,8 @@ return view.extend({
 		}
 		so.depends('node', 'selector');
 		so.validate = function(section_id) {
-			let value = this.section.formvalue(section_id, 'selector_nodes') || [];
-			let node_filter = this.section.formvalue(section_id, 'node_filter');
+			let value = normalizeNodeList(currentOptionValue(this.section, section_id, 'selector_nodes', []));
+			let node_filter = currentOptionValue(this.section, section_id, 'node_filter', '');
 			if (section_id && !value.length && !node_filter)
 				return _('Expecting: %s').format(_('non-empty value'));
 			for (let i in value)
@@ -839,9 +851,9 @@ return view.extend({
 					return;
 
 				let current_id = ++request_id,
-				    node = this.section.formvalue(section_id, 'node'),
-				    node_filter = this.section.formvalue(section_id, 'node_filter') || '',
-				    node_filter_exclude = this.section.formvalue(section_id, 'node_filter_exclude') || '',
+				    node = currentOptionValue(this.section, section_id, 'node', ''),
+				    node_filter = currentOptionValue(this.section, section_id, 'node_filter', '') || '',
+				    node_filter_exclude = currentOptionValue(this.section, section_id, 'node_filter_exclude', '') || '',
 				    manual_nodes = [];
 
 				if (!String(node_filter).trim() && !String(node_filter_exclude).trim()) {
@@ -854,9 +866,9 @@ return view.extend({
 				dom.content(container, _('Loading...'));
 
 				if (node === 'urltest')
-					manual_nodes = normalizeNodeList(this.section.formvalue(section_id, 'urltest_nodes'));
+					manual_nodes = normalizeNodeList(currentOptionValue(this.section, section_id, 'urltest_nodes', []));
 				else if (node === 'selector')
-					manual_nodes = normalizeNodeList(this.section.formvalue(section_id, 'selector_nodes'));
+					manual_nodes = normalizeNodeList(currentOptionValue(this.section, section_id, 'selector_nodes', []));
 
 				L.resolveDefault(callPreviewNodeFilter(
 					manual_nodes,
