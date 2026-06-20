@@ -158,12 +158,12 @@ jobs:
 
           ### 本版本变更
 
-          - 将 HomeProxy 运行时 outbound tag 映射为节点真实名称，MetaCubeXD / Yacd / Clash API / LuCI 节点测速可直接显示可读节点名。
-          - 同名节点、保留 tag、内部 `cfg-*` 命名空间冲突时，会按 section id 字典序生成稳定后缀，避免重复 tag。
-          - ShadowTLS 链式节点会同步映射中间层 tag，且 HomeProxy 面板代理仍会隐藏 ShadowTLS 中间层节点。
-          - `luci.homeproxy_tcping` 同步使用可读 tag 进行节点测速，并增加 RPC section 入参校验。
-          - outbound tag 映射逻辑拆分到独立模块 `outbound_tag.uc`，减少对 `homeproxy.uc` 公共工具文件的侵入，便于后续跟随上游升级。
           EOF
+          {
+            echo "- APK 版本：${HOMEPROXY_APK_VERSION}"
+            echo "- 源码提交：[\`${GITHUB_SHA::7}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}) $(git show -s --format=%s HEAD)"
+            echo "- 该发布说明由工作流生成；如本次包含多项功能变更，请发布后补充版本要点。"
+          } >> RELEASE_NOTES.md
 
       - name: Publish GitHub release
         env:
