@@ -108,7 +108,7 @@ jobs:
           pushd .github
           CUSTOM_PKG_NAME="homeproxy-custom" \
             CUSTOM_PKG_VERSION="${HOMEPROXY_APK_VERSION}" \
-            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 Surge 格式节点订阅、连通性测试、SS2022 + ShadowTLS、Selector 路由节点、路由节点正则筛选节点、路由规则直选节点、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的cfg-xxx-out-shadowtls 中间层节点。" \
+            CUSTOM_PKG_DESCRIPTION="HomeProxy 修改版，内置简体中文；支持 Surge 格式节点订阅、连通性测试、SS2022 + ShadowTLS、Selector 路由节点、路由节点正则筛选节点、路由规则直选节点、运行时 outbound tag 映射为节点真实名称、HomeProxy 配置备份 / 恢复、默认开启 Clash API、MetaCubeXD 面板入口，并隐藏 SS2022 + ShadowTLS 生成的 cfg-xxx-out-shadowtls 中间层节点。" \
             APK_SIGN_KEY="../homeproxy-custom.key" \
             fakeroot bash build-ipk.sh apk "snapshot"
           popd
@@ -158,9 +158,11 @@ jobs:
 
           ### 本版本变更
 
-          - 路由节点的 `selector` / `urltest` 支持新增“节点正则”字段，可按代理节点标签自动筛选并纳入节点。
-          - 最终生效节点为“手选节点 + 正则命中节点”，自动合并去重，并可在 LuCI 页面预览。
-          - 正则校验由路由器端 ucode `regexp()` 完成，避免前端 JavaScript 与实际运行端正则语义不一致。
+          - 将 HomeProxy 运行时 outbound tag 映射为节点真实名称，MetaCubeXD / Yacd / Clash API / LuCI 节点测速可直接显示可读节点名。
+          - 同名节点、保留 tag、内部 `cfg-*` 命名空间冲突时，会按 section id 字典序生成稳定后缀，避免重复 tag。
+          - ShadowTLS 链式节点会同步映射中间层 tag，且 HomeProxy 面板代理仍会隐藏 ShadowTLS 中间层节点。
+          - `luci.homeproxy_tcping` 同步使用可读 tag 进行节点测速，并增加 RPC section 入参校验。
+          - outbound tag 映射逻辑拆分到独立模块 `outbound_tag.uc`，减少对 `homeproxy.uc` 公共工具文件的侵入，便于后续跟随上游升级。
           EOF
 
       - name: Publish GitHub release
