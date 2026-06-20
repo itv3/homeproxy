@@ -235,7 +235,7 @@ return view.extend({
 				'href': url,
 				'target': '_blank',
 				'rel': 'noreferrer noopener'
-			}, [ _('打开面板') ]);
+			}, [ _('MetaCubeXD 面板') ]);
 		};
 
 		let routingNodeName = function(res) {

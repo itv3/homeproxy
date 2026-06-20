@@ -30,68 +30,58 @@
 
 ## 优化内容
 
-1. SS2022 + ShadowTLS
+1. 支持 SS2022 + ShadowTLS 类型节点
 
    - Shadowsocks 节点页面增加 `启用 ShadowTLS`。
    - 勾选后显示 ShadowTLS 地址、端口、密码、伪装 SNI、版本。
    - 生成 sing-box 配置时使用 Shadowsocks outbound + ShadowTLS detour。
 
-2. Selector 路由节点
+2. 添加 Selector 类型路由节点
 
-   - 路由节点类型新增 `Selector`。
-   - Selector 可包含具体代理节点。
-   - Selector 也可包含已有路由节点，例如 `Proxy_Auto`。
+   - 路由节点类型新增 `Selector`：可包含具体代理节点、已有路由节点。
    - `Selector` / `URLTest` 路由节点支持“节点正则”，可按代理节点标签自动筛选节点，并与手选节点合并去重。
    - LuCI 会预览正则命中后的生效节点，便于确认实际进入路由节点的代理列表。
-   - 节点页 / 订阅页测速基于当前运行配置；若希望订阅节点可测速，请通过节点正则 `.*` 或其他表达式将其加入运行节点组。
    - 增加递归引用检查，避免路由节点互相引用形成循环。
 
-3. 路由规则直选节点
+3. 节点页 / 订阅页添加测速按钮
 
-   - 路由规则的出站不再只能选择路由节点。
-   - 可以直接选择某个具体代理节点。
+   - 基于 sing-box Clash API `/proxies/{tag}/delay`，默认使用 `https://www.gstatic.com/generate_204` 测试延迟。
+   - 页面顶部测速按钮可对当前页面节点发起批量测速。
+   - 单击节点延迟可对该节点单独测速。
+   - 测速基于当前运行配置；若希望订阅节点可测速，请通过节点正则 `.*` 或其他表达式将其加入运行节点组。
+
+4. 路由规则直选节点
+
+   - 路由规则出站可以直接选择某个具体代理节点。
    - 生成器会自动补齐该节点需要的 sing-box outbound。
 
-4. HomeProxy 配置备份 / 恢复
+5. HomeProxy 配置备份 / 恢复
 
    - HomeProxy 菜单下新增 `备份 / 恢复` 页面。
-   - 导出 `/etc/config/homeproxy`、`/etc/homeproxy/resources/direct_list.txt`、`/etc/homeproxy/resources/proxy_list.txt`。
-   - 同时导出用户上传到 `/etc/homeproxy/certs/` 的证书和私钥文件。
+   - 导出：`/etc/config/homeproxy`、`/etc/homeproxy/resources/direct_list.txt`、`/etc/homeproxy/resources/proxy_list.txt` 以及用户上传到 `/etc/homeproxy/certs/` 的证书和私钥文件。
    - 导入时只接受上述 HomeProxy 源配置路径，恢复前会生成 `/tmp/homeproxy-rollback.tar.gz` 便于回滚。
 
-5. 默认开启 Clash API
+6. 添加 MetaCubeXD 面板入口
 
-   - 默认启用 `experimental.clash_api`。
-   - sing-box 真实 Clash API 默认监听 `192.168.9.1:9090`。
-   - HomeProxy 面板代理默认监听 `192.168.9.1:9091`，只过滤读取结果中的 `*-out-shadowtls` 中间层。
-   - 默认允许 MetaCubeXD / Yacd 页面访问。
-   - 默认允许浏览器 Private Network Access。
+   - 默认开启 Clash API，并添加 HomeProxy 面板代理，用于隐藏 SS2022 + ShadowTLS 生成链路中的中间层节点 `cfg-xxx-out-shadowtls`。
+   - 客户端页面添加 `MetaCubeXD 面板` 按钮。
+   - 默认跳转到 [https://metacubexd.pages.dev/#/overview](https://metacubexd.pages.dev/#/overview)，跳转时自动带入 HomeProxy 面板代理的 host、port、secret 等参数。
+   - 可通过 MetaCubeXD 面板切换节点、测速、查看连接状态等。
 
-6. MetaCubeXD 面板入口
-
-   - HomeProxy 客户端页面增加 `打开面板` 按钮。
-   - 默认跳转到 <https://metacubexd.pages.dev/#/overview>。
-   - 跳转时自动带入 HomeProxy 面板代理的 host、port、secret 等参数，MetaCubeXD 切换节点请求会原样转发到真实 Clash API。
-
-7. 隐藏 ShadowTLS 中间层节点
-
-   - MetaCubeXD / Yacd 读取出站列表时会隐藏 `cfg-xxx-out-shadowtls` 中间层节点。
-   - 隐藏的只是 SS2022 + ShadowTLS 生成链路中的中间层节点，不影响真实代理节点和节点切换。
-
-8. 运行时 outbound tag 映射为节点真实名称
+7. 运行时 outbound tag 映射为节点真实名称
 
    - 生成 sing-box 配置时，将运行时 outbound tag 从 `cfg-<section>-out` 映射为节点 `label`。
    - MetaCubeXD / Yacd / Clash API / LuCI 节点测速会显示真实节点名称，便于识别和排障。
    - 同名节点、保留 tag、内部 `cfg-*` 命名空间冲突时，会生成稳定后缀，避免重复 tag。
    - ShadowTLS 中间层会同步映射，且仍由 HomeProxy 面板代理隐藏。
 
-9. 自定义 Release 自动发布
+8. 自定义 Release 自动发布
 
    - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
    - 打 `custom-*` tag 后会现场构建内置中文翻译的签名 APK 和 v3 软件源索引，并自动发布到 GitHub Releases。
    - 一键安装会自动导入公钥、配置软件源并安装 / 升级 HomeProxy。
 
-10. 定时检查上游更新
+9. 定时检查上游更新
 
    - GitHub Actions 每天检查一次 `immortalwrt/homeproxy:master`。
    - 如果上游有新提交，会创建或更新带 `upstream-update` 标签的 Issue。
@@ -168,7 +158,7 @@ find /etc/homeproxy /etc/config -name "*.apk-new" -exec rm -f {} \; 2>/dev/null 
 只看本 README 应该能完成一次新功能开发和发布。当前自定义版主要涉及下面几类文件：
 
 ```text
-htdocs/luci-static/resources/view/homeproxy/client.js   # 客户端页面、路由节点、路由规则、打开面板按钮
+htdocs/luci-static/resources/view/homeproxy/client.js   # 客户端页面、路由节点、路由规则、MetaCubeXD 面板按钮
 htdocs/luci-static/resources/view/homeproxy/node.js     # 节点页面、SS2022 + ShadowTLS 表单
 htdocs/luci-static/resources/view/homeproxy/backup.js   # HomeProxy 源配置备份 / 恢复页面
 root/etc/homeproxy/scripts/generate_client.uc           # 生成 sing-box 客户端配置
@@ -277,6 +267,7 @@ root/etc/homeproxy/scripts/generate_client.uc
 root/etc/homeproxy/scripts/outbound_tag.uc
 root/etc/homeproxy/scripts/migrate_config.uc
 root/etc/config/homeproxy
+root/usr/share/rpcd/ucode/luci.homeproxy
 ```
 
 如果出现冲突，优先保留上游的新结构，再重新套回本仓库的自定义能力：
@@ -285,8 +276,10 @@ root/etc/config/homeproxy
 - 路由节点 Selector。
 - Selector 可包含具体节点和已有路由节点。
 - Selector / URLTest 路由节点支持按节点名称正则筛选节点。
+- 节点页 / 订阅页测速按钮。
 - 路由规则可直接选择具体节点。
-- Clash API 默认配置、面板代理和 MetaCubeXD `打开面板` 入口。
+- HomeProxy 源配置备份 / 恢复。
+- MetaCubeXD 面板入口、Clash API 默认配置和面板代理。
 - 运行时 outbound tag 映射为节点真实名称。
 
 ### 2. 本地检查
