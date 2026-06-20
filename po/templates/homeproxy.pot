@@ -231,7 +231,11 @@ msgid "Auto update subscriptions and geodata."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:698
-msgid "Automatically include proxy nodes whose labels match this regex. Effective nodes are recalculated after saving and applying manual node changes or after subscription updates finish."
+msgid "Use POSIX ERE syntax. Lookahead/lookbehind such as (?!) and (?<=) are unsupported."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:700
+msgid "Effective nodes are recalculated automatically after saving and applying manual node changes, or after manual/scheduled subscription updates finish."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:751
@@ -1635,6 +1639,14 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/client.js:697
 msgid "Node regex"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:778
+msgid "Node exclude regex"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client.js:779
+msgid "Exclude proxy nodes whose labels match this regex from the final effective node set, including manually selected nodes. Leave empty to exclude nothing. To exclude from all nodes, set the Node regex above to .*"
 msgstr ""
 
 #: root/usr/share/luci/menu.d/luci-app-homeproxy.json:22
@@ -3084,4 +3096,20 @@ msgstr ""
 
 #: htdocs/luci-static/resources/homeproxy.js:328
 msgid "valid uuid"
+msgstr ""
+
+#: htdocs/luci-static/resources/homeproxy.js:248
+msgid "HomeProxy 配置生成时发现以下问题，请检查并手动修复："
+msgstr ""
+
+#: htdocs/luci-static/resources/homeproxy.js:251
+msgid "以下诊断来自上次生成配置（%s）。修复后请重新应用或重启服务以刷新诊断。"
+msgstr ""
+
+#: htdocs/luci-static/resources/homeproxy.js:252
+msgid "以下诊断来自上次生成配置。修复后请重新应用或重启服务以刷新诊断。"
+msgstr ""
+
+#: htdocs/luci-static/resources/homeproxy.js:257
+msgid "建议："
 msgstr ""

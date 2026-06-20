@@ -3,6 +3,7 @@
 		"description": "Grant access to homeproxy configuration",
 		"read": {
 			"file": {
+				"/etc/homeproxy/scripts/node_references_ctl.uc": [ "exec" ],
 				"/var/run/homeproxy/homeproxy.log": [ "read" ],
 				"/var/run/homeproxy/sing-box-c.log": [ "read" ],
 				"/var/run/homeproxy/sing-box-s.log": [ "read" ]
@@ -10,6 +11,7 @@
 			"ubus": {
 				"service": [ "list" ],
 				"luci.homeproxy": [
+					"config_diagnostics",
 					"connection_check",
 					"preview_node_filter",
 					"resources_get_version",
@@ -17,6 +19,7 @@
 					"validate_regex"
 				],
 				"luci.homeproxy_tcping": [
+					"node_tcping",
 					"nodes_tcping"
 				]
 			},
@@ -24,6 +27,7 @@
 		},
 		"write": {
 			"file": {
+				"/etc/homeproxy/scripts/remove_subscription_nodes.uc": [ "exec" ],
 				"/etc/homeproxy/scripts/update_subscriptions.uc": [ "exec" ],
 				"/tmp/homeproxy_certificate.tmp": [ "write" ],
 				"/tmp/homeproxy-backup-*.tar.gz": [ "read" ],

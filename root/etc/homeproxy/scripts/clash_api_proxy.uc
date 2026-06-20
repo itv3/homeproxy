@@ -16,7 +16,6 @@ const uci = cursor();
 const uciconfig = 'homeproxy';
 const ucimain = 'config';
 const shadowtls_suffix = '-out-shadowtls';
-const delay_test_selector_tag = '__homeproxy_delay_test__';
 const filter_timeout = 10000;
 const fallback_delay_limit = 5;
 const upstream_read_timeout = 5;  // seconds; total read deadline for synchronous fetchUpstream
@@ -201,7 +200,7 @@ function isShadowTlsTag(name) {
 }
 
 function isHiddenProxyTag(name) {
-	return name === delay_test_selector_tag || isShadowTlsTag(name);
+	return isShadowTlsTag(name);
 }
 
 function filterProxyItem(item) {

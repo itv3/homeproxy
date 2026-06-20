@@ -79,6 +79,7 @@ export function build_outbound_tag_map(uci) {
 		'default-dns', 'system-dns', 'main-dns', 'china-dns',
 		'dns-in', 'mixed-in', 'redirect-in', 'tproxy-in', 'tun-in',
 		'direct-domain', 'proxy-domain', 'geoip-cn', 'geosite-cn', 'geosite-noncn',
+		// 旧隐藏测速组的保留占位，避免用户标签或旧配置与保留名冲突；不是运行时测速组。
 		'__homeproxy_delay_test__'
 	];
 

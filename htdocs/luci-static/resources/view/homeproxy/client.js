@@ -64,7 +64,12 @@ const callValidateRegex = rpc.declare({
 const callPreviewNodeFilter = rpc.declare({
 	object: 'luci.homeproxy',
 	method: 'preview_node_filter',
-	params: ['manual_nodes', 'node_filter'],
+	params: ['manual_nodes', 'node_filter', 'node_filter_exclude', 'node'],
+	expect: { '': {} }
+});
+const callConfigDiagnostics = rpc.declare({
+	object: 'luci.homeproxy',
+	method: 'config_diagnostics',
 	expect: { '': {} }
 });
 
@@ -154,7 +159,8 @@ return view.extend({
 		return Promise.all([
 			uci.load('homeproxy'),
 			hp.getBuiltinFeatures(),
-			network.getHostHints()
+			network.getHostHints(),
+			L.resolveDefault(callConfigDiagnostics(), { result: true, items: [] })
 		]);
 	},
 
@@ -163,6 +169,8 @@ return view.extend({
 
 		let features = data[1],
 		    hosts = data[2]?.hosts;
+
+		hp.showConfigDiagnostics(data[3]);
 
 		/* Cache all configured proxy nodes, they will be called multiple times */
 		let proxy_nodes = {};
@@ -767,7 +775,9 @@ return view.extend({
 		so.modalonly = true;
 
 		so = ss.option(form.Value, 'node_filter', _('Node regex'),
-			_('Automatically include proxy nodes whose labels match this regex. Effective nodes are recalculated after saving and applying manual node changes or after subscription updates finish.'));
+			_('Use POSIX ERE syntax. Lookahead/lookbehind such as (?!) and (?<=) are unsupported.') +
+			'<br/>' +
+			_('Effective nodes are recalculated automatically after saving and applying manual node changes, or after manual/scheduled subscription updates finish.'));
 		so.depends('node', 'urltest');
 		so.depends('node', 'selector');
 		so.forcewrite = true;
@@ -791,6 +801,31 @@ return view.extend({
 		}
 		so.modalonly = true;
 
+		so = ss.option(form.Value, 'node_filter_exclude', _('Node exclude regex'),
+			_('Exclude proxy nodes whose labels match this regex from the final effective node set, including manually selected nodes. Leave empty to exclude nothing. To exclude from all nodes, set the Node regex above to .*'));
+		so.depends('node', 'urltest');
+		so.depends('node', 'selector');
+		so.forcewrite = true;
+		so.write = function(section_id, value) {
+			// 同 node_filter：RPC 校验放在 write() 里让保存流程等待结果。
+			return L.resolveDefault(callValidateRegex(value), { result: false, error: _('Unknown error.') }).then((res) => {
+				if (!res.result) {
+					let message = _('Expecting: %s').format(_('valid regular expression'));
+					if (res.error)
+						message += ': ' + res.error;
+
+					return Promise.reject(new TypeError(message));
+				}
+
+				return this.map.data.set(
+					this.uciconfig ?? this.section.uciconfig ?? this.map.config,
+					this.ucisection ?? section_id,
+					this.ucioption ?? this.option,
+					value);
+			});
+		};
+		so.modalonly = true;
+
 		so = ss.option(form.DummyValue, '_node_filter_preview', _('Effective nodes'));
 		so.depends('node', 'urltest');
 		so.depends('node', 'selector');
@@ -806,9 +841,10 @@ return view.extend({
 				let current_id = ++request_id,
 				    node = this.section.formvalue(section_id, 'node'),
 				    node_filter = this.section.formvalue(section_id, 'node_filter') || '',
+				    node_filter_exclude = this.section.formvalue(section_id, 'node_filter_exclude') || '',
 				    manual_nodes = [];
 
-				if (!String(node_filter).trim()) {
+				if (!String(node_filter).trim() && !String(node_filter_exclude).trim()) {
 					setNodeFilterPreviewVisible(container, false);
 					dom.content(container, '');
 					return;
@@ -824,7 +860,9 @@ return view.extend({
 
 				L.resolveDefault(callPreviewNodeFilter(
 					manual_nodes,
-					node_filter
+					node_filter,
+					node_filter_exclude,
+					node
 				), { result: false, error: _('Unknown error.') }).then((res) => {
 					if (current_id === request_id)
 						renderNodeFilterPreview(container, res);
@@ -1053,6 +1091,7 @@ return view.extend({
 			delete this.vallist;
 
 			this.value('direct-out', _('Direct'));
+			this.value('block-out', _('Block'));
 			addSelectableOutbounds(this, section_id, true);
 
 			return this.super('load', section_id);
@@ -1399,6 +1438,7 @@ return view.extend({
 			delete this.vallist;
 
 			this.value('direct-out', _('Direct'));
+			this.value('block-out', _('Block'));
 			uci.sections(data[0], 'routing_node', (res) => {
 				if (res.enabled === '1')
 					this.value(res['.name'], res.label);
@@ -1748,6 +1788,7 @@ return view.extend({
 
 			this.value('', _('Default'));
 			this.value('direct-out', _('Direct'));
+			this.value('block-out', _('Block'));
 			uci.sections(data[0], 'routing_node', (res) => {
 				if (res.enabled === '1')
 					this.value(res['.name'], res.label);

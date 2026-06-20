@@ -14,6 +14,7 @@ import { cursor } from 'uci';
 
 import { urldecode, urlencode } from 'luci.http';
 import { init_action } from 'luci.sys';
+import { remove_subscription_nodes } from '/etc/homeproxy/scripts/node_references.uc';
 
 import {
 	wGET, decodeBase64Str, getTime, isEmpty, parseURL,
@@ -92,6 +93,25 @@ function uci_value_equal(a, b) {
 		b = sprintf('%s', b);
 
 	return sprintf('%J', a) == sprintf('%J', b);
+}
+
+function setOrDeleteList(section, option, values) {
+	if (length(values))
+		uci.set(uciconfig, section, option, values);
+	else
+		uci.delete(uciconfig, section, option);
+}
+
+function logCleanupChange(change) {
+	if (!change || !change.node_id)
+		return;
+
+	let target = sprintf('%s.%s', change.section || '-', change.option || '-'),
+	    action = change.action || 'update',
+	    value = (action === 'set') ? sprintf(' to %s', change.value) : '';
+
+	log(sprintf('Cleaned reference to deleted subscription node %s: %s %s%s.',
+		change.node_id, target, action, value));
 }
 
 function version_at_least(version, major, minor, patch) {
@@ -841,7 +861,9 @@ function main() {
 		return false;
 	}
 
-	let added = 0, updated = 0, removed = 0;
+	let added = 0, updated = 0, removed = 0,
+	    stale_nodes = [],
+	    stale_labels = {};
 	uci.foreach(uciconfig, ucinode, (cfg) => {
 		/* Nodes created by the user */
 		if (!cfg.grouphash)
@@ -852,10 +874,9 @@ function main() {
 			return null;
 
 		if (!node_cache[cfg.grouphash] || !node_cache[cfg.grouphash][cfg['.name']]) {
-			uci.delete(uciconfig, cfg['.name']);
-			removed++;
-
-			log(sprintf('Removing node: %s.', cfg.label || cfg['name']));
+			push(stale_nodes, cfg['.name']);
+			stale_labels[cfg['.name']] = cfg.label || cfg['.name'];
+			return null;
 		} else {
 			const node = node_cache[cfg.grouphash][cfg['.name']];
 			let node_changed = false;
@@ -885,6 +906,27 @@ function main() {
 			node.isExisting = true;
 		}
 	});
+
+	if (length(stale_nodes)) {
+		const cleanup = remove_subscription_nodes(uci, uciconfig, stale_nodes);
+		removed += cleanup.removed;
+
+		for (let node_id in stale_nodes)
+			log(sprintf('Removing node: %s.', stale_labels[node_id] || node_id));
+
+		if (cleanup.changed) {
+			if (uci.get(uciconfig, ucimain, 'main_node') !== main_node)
+				log(sprintf('Deleted subscription node affected main node, falling back to %s.',
+					uci.get(uciconfig, ucimain, 'main_node') || 'nil'));
+			if (uci.get(uciconfig, ucimain, 'main_udp_node') !== main_udp_node)
+				log(sprintf('Deleted subscription node affected main UDP node, falling back to %s.',
+					uci.get(uciconfig, ucimain, 'main_udp_node') || 'nil'));
+
+			for (let change in cleanup.changes)
+				logCleanupChange(change);
+		}
+	}
+
 	for (let nodes in node_result)
 		map(nodes, (node) => {
 			if (node.isExisting)
@@ -901,45 +943,49 @@ function main() {
 
 	let need_restart = (via_proxy !== '1') || added > 0 || updated > 0 || removed > 0;
 	if (!isEmpty(main_node)) {
-		const first_server = uci.get_first(uciconfig, ucinode);
-		if (first_server) {
+		const has_server = !!uci.get_first(uciconfig, ucinode);
+		if (has_server) {
 			let main_urltest_nodes;
 			if (main_node === 'urltest') {
-				main_urltest_nodes = filter(uci.get(uciconfig, ucimain, 'main_urltest_nodes'), (v) => {
+				main_urltest_nodes = filter(uci.get(uciconfig, ucimain, 'main_urltest_nodes') || [], (v) => {
 					if (!uci.get(uciconfig, v)) {
 						log(sprintf('Node %s is gone, removing from urltest list.', v));
 						return false;
 					}
 					return true;
 				});
+				setOrDeleteList(ucimain, 'main_urltest_nodes', main_urltest_nodes);
+				uci.commit(uciconfig);
 			}
 
 			if ((main_node === 'urltest') ? !length(main_urltest_nodes) : !uci.get(uciconfig, main_node)) {
-				uci.set(uciconfig, ucimain, 'main_node', first_server);
+				uci.set(uciconfig, ucimain, 'main_node', 'nil');
 				uci.commit(uciconfig);
 				need_restart = true;
 
-				log('Main node is gone, switching to the first node.');
+				log('Main node is gone, disabling main node.');
 			}
 
 			if (!isEmpty(main_udp_node) && main_udp_node !== 'same') {
 				let main_udp_urltest_nodes;
 				if (main_udp_node === 'urltest') {
-					main_udp_urltest_nodes = filter(uci.get(uciconfig, ucimain, 'main_udp_urltest_nodes'), (v) => {
+					main_udp_urltest_nodes = filter(uci.get(uciconfig, ucimain, 'main_udp_urltest_nodes') || [], (v) => {
 						if (!uci.get(uciconfig, v)) {
 							log(sprintf('Node %s is gone, removing from urltest list.', v));
 							return false;
 						}
 						return true;
 					});
+					setOrDeleteList(ucimain, 'main_udp_urltest_nodes', main_udp_urltest_nodes);
+					uci.commit(uciconfig);
 				}
 
 				if ((main_udp_node === 'urltest') ? !length(main_udp_urltest_nodes) : !uci.get(uciconfig, main_udp_node)) {
-					uci.set(uciconfig, ucimain, 'main_udp_node', first_server);
+					uci.set(uciconfig, ucimain, 'main_udp_node', 'same');
 					uci.commit(uciconfig);
 					need_restart = true;
 
-					log('Main UDP node is gone, switching to the first node.');
+					log('Main UDP node is gone, falling back to the main node.');
 				}
 			}
 		} else {

@@ -222,6 +222,43 @@ return baseclass.extend({
 		return label ? title + ' » ' + label : addtitle;
 	},
 
+	toArray(value) {
+		if (Array.isArray(value))
+			return value;
+		else if (value == null || value === '')
+			return [];
+
+		return [ value ];
+	},
+
+	showConfigDiagnostics(diagnostics) {
+		let items = diagnostics?.items || [],
+		    generatedAt = null;
+
+		if (!items.length)
+			return;
+
+		if (diagnostics?.time) {
+			let date = new Date(Number(diagnostics.time) * 1000);
+			if (!isNaN(date.getTime()))
+				generatedAt = date.toLocaleString();
+		}
+
+		ui.addNotification(null, E('div', [
+			E('p', _('HomeProxy 配置生成时发现以下问题，请检查并手动修复：')),
+			E('p', { 'style': 'color:var(--text-color-medium,#666);' },
+				generatedAt
+					? _('以下诊断来自上次生成配置（%s）。修复后请重新应用或重启服务以刷新诊断。').format(generatedAt)
+					: _('以下诊断来自上次生成配置。修复后请重新应用或重启服务以刷新诊断。')),
+			E('ul', items.map((item) => E('li', [
+				E('strong', '[' + (item.type || 'warning') + '] '),
+				item.message || '',
+				item.suggestion ? E('div', { 'style': 'margin-top:.2em;color:var(--text-color-medium,#666);' },
+					_('建议：') + item.suggestion) : ''
+			])))
+		]), 'warning');
+	},
+
 	renderSectionAdd(section, extra_class) {
 		let el = form.GridSection.prototype.renderSectionAdd.apply(section, [ extra_class ]),
 			nameEl = el.querySelector('.cbi-section-create-name');

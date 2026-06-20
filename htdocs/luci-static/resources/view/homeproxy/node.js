@@ -16,16 +16,57 @@
 'require tools.widgets as widgets';
 
 const TCPING_MAX_NODES = 300;
+const TCPING_HELP_TEXT = '测速基于当前运行配置。若希望所有节点可测速，请通过节点正则 .* 表达式将其加入运行节点组';
 const callNodesTcping = rpc.declare({
 	object: 'luci.homeproxy_tcping',
 	method: 'nodes_tcping',
 	params: [ 'sections' ],
 	expect: { '': {} }
 });
+const callNodeTcping = rpc.declare({
+	object: 'luci.homeproxy_tcping',
+	method: 'node_tcping',
+	params: [ 'section' ],
+	expect: { '': {} }
+});
+const callConfigDiagnostics = rpc.declare({
+	object: 'luci.homeproxy',
+	method: 'config_diagnostics',
+	expect: { '': {} }
+});
+const tcpingRunning = {};
 
 function allowInsecureConfirm(ev, _section_id, value) {
 	if (value === '1' && !confirm(_('Are you sure to allow insecure?')))
 		ev.target.firstElementChild.checked = null;
+}
+
+function showNodeReferenceNotice(section_id) {
+	return fs.exec_direct('/etc/homeproxy/scripts/node_references_ctl.uc', [ JSON.stringify({
+		action: 'get',
+		node_id: section_id
+	}) ]).then((raw) => {
+		let res = JSON.parse(raw || '{}');
+		if (!res.result) {
+			ui.addNotification(null, E('p', res.error || _('无法检查节点引用，请稍后重试。')), 'warning');
+			return true;
+		}
+
+		let refs = res.references || [];
+		if (!refs.length)
+			return false;
+
+		let label = uci.get('homeproxy', section_id, 'label') || section_id;
+		ui.addNotification(null, E('div', [
+			E('p', _('节点 %s 仍被以下配置引用，请先删除引用后再删除节点。').format(label)),
+			E('ul', refs.map((ref) => E('li', formatNodeReference(ref))))
+		]), 'warning');
+
+		return true;
+	}).catch((err) => {
+		ui.addNotification(null, E('p', _('无法检查节点引用，请稍后重试。')), 'warning');
+		return true;
+	});
 }
 
 function nodeTcpingId(section_id) {
@@ -33,14 +74,166 @@ function nodeTcpingId(section_id) {
 		'_' + c.charCodeAt(0).toString(16) + '_');
 }
 
-function setButtonText(btn, text) {
+function formatNodeReference(ref) {
+	let section_label = ref?.section ? (uci.get('homeproxy', ref.section, 'label') || ref.section) : '';
+
+	switch (ref?.scope) {
+	case 'main_node':
+		return _('Main node');
+	case 'main_udp_node':
+		return _('Main UDP node');
+	case 'main_urltest_nodes':
+		return _('Main node') + ' / ' + _('URLTest nodes');
+	case 'main_udp_urltest_nodes':
+		return _('Main UDP node') + ' / ' + _('URLTest nodes');
+	case 'default_outbound':
+		return _('Routing') + ' / ' + _('Default outbound');
+	case 'routing_node_node':
+		return _('Routing Nodes') + ' / ' + section_label + ' / ' + _('Node');
+	case 'routing_node_outbound':
+		return _('Routing Nodes') + ' / ' + section_label + ' / ' + _('Outbound');
+	case 'routing_node_selector_default':
+		return _('Routing Nodes') + ' / ' + section_label + ' / ' + _('Default');
+	case 'routing_node_urltest_nodes':
+		return _('Routing Nodes') + ' / ' + section_label + ' / ' + _('URLTest nodes');
+	case 'routing_node_selector_nodes':
+		return _('Routing Nodes') + ' / ' + section_label + ' / ' + _('Selector nodes');
+	case 'routing_rule_outbound':
+		return _('Routing Rules') + ' / ' + section_label + ' / ' + _('Outbound');
+	case 'dns_server_outbound':
+		return _('DNS Server') + ' / ' + section_label + ' / ' + _('Outbound');
+	case 'ruleset_outbound':
+		return _('Rule set') + ' / ' + section_label + ' / ' + _('Outbound');
+	default:
+		return ref?.label || ref?.scope || '';
+	}
+}
+
+function formatTestedAt(result) {
+	let tested_at = result?.tested_at;
+	if (!tested_at)
+		return '';
+
+	try {
+		return '测试时间: ' + new Date(tested_at * 1000).toLocaleString();
+	} catch (e) {
+		return '';
+	}
+}
+
+function replaceElementContent(el, content) {
+	if (!el)
+		return;
+
+	while (el.firstChild)
+		el.removeChild(el.firstChild);
+
+	if (Array.isArray(content)) {
+		for (let node of content)
+			el.appendChild((typeof node === 'string') ? document.createTextNode(node) : node);
+	} else {
+		el.appendChild((typeof content === 'string') ? document.createTextNode(content) : content);
+	}
+}
+
+function svgElement(tag, attrs, children) {
+	let el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+
+	for (let key in (attrs || {}))
+		el.setAttribute(key, attrs[key]);
+
+	for (let child of (children || []))
+		el.appendChild(child);
+
+	return el;
+}
+
+function renderSpeedtestIcon(extra_class) {
+	return svgElement('svg', {
+		'xmlns': 'http://www.w3.org/2000/svg',
+		'width': '18',
+		'height': '18',
+		'viewBox': '0 0 24 24',
+		'fill': 'none',
+		'stroke': 'currentColor',
+		'stroke-width': '2',
+		'stroke-linecap': 'round',
+		'stroke-linejoin': 'round',
+		'class': extra_class || ''
+	}, [
+		svgElement('path', { 'd': 'M5.636 19.364a9 9 0 1 1 12.728 0' }),
+		svgElement('path', { 'd': 'M16 9l-4 4' })
+	]);
+}
+
+function renderTcpingSpinner() {
+	return E('span', { 'class': 'homeproxy-tcping-spinner' });
+}
+
+function setButtonIcon(btn, busy) {
 	if (!btn)
 		return;
 
-	if (btn.firstChild && btn.firstChild.nodeType === 3)
-		btn.firstChild.data = text;
-	else
-		btn.textContent = text;
+	replaceElementContent(btn, renderSpeedtestIcon(busy ? 'homeproxy-tcping-icon homeproxy-tcping-icon-busy' : 'homeproxy-tcping-icon'));
+}
+
+function ensureTcpingStyle() {
+	if (document.getElementById('homeproxy-tcping-style'))
+		return;
+
+	document.head.appendChild(E('style', { 'id': 'homeproxy-tcping-style' }, `
+@keyframes homeproxy-tcping-spin { to { transform: rotate(360deg); } }
+@keyframes homeproxy-tcping-pulse { 50% { opacity: .45; } }
+.homeproxy-tcping-button {
+	width: 36px;
+	min-width: 36px;
+	height: 36px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	line-height: 1;
+}
+.homeproxy-tcping-icon {
+	width: 18px;
+	height: 18px;
+}
+.homeproxy-tcping-icon-busy {
+	animation: homeproxy-tcping-pulse 1s ease-in-out infinite;
+}
+.homeproxy-latency-pill {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 4.8em;
+	min-height: 1.7em;
+	padding: .16em .55em;
+	border-radius: 6px;
+	cursor: pointer;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.3;
+	user-select: none;
+	transition: background-color .15s ease, transform .15s ease;
+}
+.homeproxy-latency-pill:hover {
+	background-color: rgba(128, 128, 128, .14);
+	transform: scale(1.04);
+}
+.homeproxy-latency-pill:active {
+	transform: scale(.96);
+}
+.homeproxy-latency-pill.homeproxy-tcping-busy {
+	color: gray !important;
+}
+.homeproxy-tcping-spinner {
+	width: 1em;
+	height: 1em;
+	border: 2px solid currentColor;
+	border-top-color: transparent;
+	border-radius: 999px;
+	animation: homeproxy-tcping-spin .8s linear infinite;
+}
+`));
 }
 
 function setTcpingResult(section_id, text, color, title) {
@@ -49,37 +242,34 @@ function setTcpingResult(section_id, text, color, title) {
 	if (!el)
 		return false;
 
-	el.textContent = text;
+	replaceElementContent(el, text);
 	el.title = title || '';
 	el.style.setProperty('color', color || '');
+	el.classList.remove('homeproxy-tcping-busy');
+	el.setAttribute('aria-busy', 'false');
 
 	return true;
 }
 
-function getTcpingResult(section_id) {
+function setTcpingBusy(section_id) {
 	let el = document.getElementById(nodeTcpingId(section_id));
 
 	if (!el)
-		return null;
+		return false;
 
-	return {
-		text: el.textContent,
-		color: el.style.getPropertyValue('color') || '',
-		title: el.title || ''
-	};
-}
+	replaceElementContent(el, renderTcpingSpinner());
+	el.title = '测试中...';
+	el.classList.add('homeproxy-tcping-busy');
+	el.setAttribute('aria-busy', 'true');
 
-function restoreTcpingResult(section_id, previous, title) {
-	if (previous)
-		return setTcpingResult(section_id, previous.text, previous.color, title || previous.title);
-
-	return setTcpingResult(section_id, '-', '', title);
+	return true;
 }
 
 function renderTcpingResult(section_id, result) {
 	let target = result?.target || '',
 	    error = result?.error || '',
-	    title = [ target, error ].filter((v) => v).join(' ');
+	    tested_at = formatTestedAt(result),
+	    title = [ target, error, tested_at ].filter((v) => v).join('\n');
 
 	switch (result?.status) {
 	case 'ok':
@@ -103,9 +293,6 @@ function renderTcpingResult(section_id, result) {
 	case 'unloaded':
 		setTcpingResult(section_id, '未加入', 'gray', title);
 		break;
-	case 'unchanged':
-	case 'no_result':
-		return false;
 	default:
 		setTcpingResult(section_id, '失败', 'red', title);
 		break;
@@ -114,13 +301,58 @@ function renderTcpingResult(section_id, result) {
 	return true;
 }
 
+function applyTcpingResult(section_id, result) {
+	renderTcpingResult(section_id, result);
+	return true;
+}
+
+function runSingleNodeTcping(section_id, notices) {
+	return L.resolveDefault(callNodeTcping(section_id), {}).then((res) => {
+		if (!res.result) {
+			let message = res.error || '连通性测试失败。';
+			renderTcpingResult(section_id, { status: 'failed', error: message });
+			notices[message] = true;
+			return;
+		}
+
+		if (res.warning)
+			notices[res.warning] = true;
+
+		applyTcpingResult(section_id, res.node);
+	}).catch((err) => {
+		let message = err.message || String(err);
+		renderTcpingResult(section_id, { status: 'failed', error: message });
+		notices[message] = true;
+	});
+}
+
+function runNodeTcping(section_id, ev) {
+	let notices = {};
+
+	if (ev) {
+		ev.preventDefault();
+		ev.stopPropagation();
+	}
+
+	if (tcpingRunning[section_id])
+		return Promise.resolve();
+
+	tcpingRunning[section_id] = true;
+	setTcpingBusy(section_id);
+
+	return runSingleNodeTcping(section_id, notices).then(() => {
+		for (let message in notices)
+			ui.addNotification(null, E('p', message));
+	}).finally(() => {
+		tcpingRunning[section_id] = false;
+	});
+}
+
 function runNodesTcping(section_ids, ev) {
 	let btn = ev?.currentTarget || ev?.target,
-	    oldText = btn?.textContent,
 	    test_sections = section_ids.slice(0, TCPING_MAX_NODES),
 	    skipped_sections = section_ids.slice(TCPING_MAX_NODES),
-	    previous_results = {},
-	    failed_count = 0;
+	    notices = {};
 
 	if (!section_ids.length) {
 		ui.addNotification(null, E('p', '没有可测试的节点。'));
@@ -130,8 +362,7 @@ function runNodesTcping(section_ids, ev) {
 	let visible = 0;
 
 	for (let section_id of test_sections) {
-		previous_results[section_id] = getTcpingResult(section_id);
-		if (setTcpingResult(section_id, '测试中...', 'gray'))
+		if (setTcpingBusy(section_id))
 			visible++;
 	}
 	for (let section_id of skipped_sections)
@@ -145,48 +376,38 @@ function runNodesTcping(section_ids, ev) {
 
 	if (btn) {
 		btn.disabled = true;
-		setButtonText(btn, '测试中...');
+		setButtonIcon(btn, true);
 	}
 
 	return L.resolveDefault(callNodesTcping(test_sections), {}).then((res) => {
 		if (!res.result)
 			throw new Error(res.error || '连通性测试失败。');
 
-		let nodes = res.nodes || {};
-		for (let section_id of test_sections) {
-			let result = nodes[section_id];
-			if (result?.status === 'unchanged' || result?.status === 'no_result') {
-				let title = [ result?.target || '', result?.error || '' ].filter((v) => v).join(' ');
-				restoreTcpingResult(section_id, previous_results[section_id], title);
-				continue;
-			}
-
-			renderTcpingResult(section_id, result);
-			if (result?.status !== 'ok' && result?.status !== 'unloaded' && result?.status !== 'skipped' &&
-			    result?.status !== 'unchanged' && result?.status !== 'no_result')
-				failed_count++;
-		}
-
 		if (res.warning)
-			ui.addNotification(null, E('p', res.warning));
+			notices[res.warning] = true;
+
+		let nodes = res.nodes || {};
+		for (let section_id of test_sections)
+			applyTcpingResult(section_id, nodes[section_id]);
 	}).catch((err) => {
 		let message = err.message || String(err);
 
 		for (let section_id of test_sections)
-			restoreTcpingResult(section_id, previous_results[section_id], message);
+			renderTcpingResult(section_id, { status: 'failed', error: message });
 
-		ui.addNotification(null, E('p', message));
+		notices[message] = true;
 	}).then(() => {
-		if (skipped_sections.length)
-			ui.addNotification(null, E('p', '已跳过 %d 个节点，一次最多测试 %d 个节点。'.format(
-				skipped_sections.length, TCPING_MAX_NODES)));
-
-		if (failed_count)
-			ui.addNotification(null, E('p', '%d 个节点连通性测试失败。'.format(failed_count)));
+		for (let message in notices)
+			ui.addNotification(null, E('p', message));
+	}).then(() => {
+		if (skipped_sections.length) {
+			let message = '已跳过 %d 个节点，一次最多测试 %d 个节点。'.format(skipped_sections.length, TCPING_MAX_NODES);
+			ui.addNotification(null, E('p', message));
+		}
 
 		if (btn) {
 			btn.disabled = false;
-			setButtonText(btn, oldText || '连通性测试');
+			setButtonIcon(btn, false);
 		}
 	});
 }
@@ -631,9 +852,20 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.editable = true;
 	o.rmempty = true;
 	o.renderWidget = function(section_id) {
+		ensureTcpingStyle();
 		return E('span', {
 			id: nodeTcpingId(section_id),
-			class: 'homeproxy-node-tcping'
+			class: 'homeproxy-node-tcping homeproxy-latency-pill',
+			role: 'button',
+			tabindex: '0',
+			title: '点击测速',
+			click: (ev) => runNodeTcping(section_id, ev),
+			keydown: (ev) => {
+				if (ev.key === 'Enter' || ev.key === ' ') {
+					ev.preventDefault();
+					return runNodeTcping(section_id, ev);
+				}
+			}
 		}, '-');
 	}
 
@@ -1435,7 +1667,8 @@ return view.extend({
 	load() {
 		return Promise.all([
 			uci.load('homeproxy'),
-			hp.getBuiltinFeatures()
+			hp.getBuiltinFeatures(),
+			L.resolveDefault(callConfigDiagnostics(), { result: true, items: [] })
 		]);
 	},
 
@@ -1444,6 +1677,7 @@ return view.extend({
 		let main_node = uci.get(data[0], 'config', 'main_node');
 		let routing_mode = uci.get(data[0], 'config', 'routing_mode');
 		let features = data[1];
+		hp.showConfigDiagnostics(data[2]);
 
 		/* Cache subscription information, it will be called multiple times */
 		let subinfo = [];
@@ -1474,12 +1708,26 @@ return view.extend({
 		};
 
 		let addTcpingButton = function(tab, option, grouphash) {
-			o = s.taboption(tab, form.Button, option, '');
-			o.inputstyle = 'action';
-			o.inputtitle = '连通性测试';
-			o.onclick = function(ev) {
-				return runNodesTcping(collectNodeSections(grouphash), ev);
-			}
+			o = s.taboption(tab, form.DummyValue, option, '');
+			o.rawhtml = true;
+			o.renderWidget = function() {
+				ensureTcpingStyle();
+				return E('div', {
+					'class': 'homeproxy-tcping-toolbar',
+					'style': 'display:flex; align-items:center; gap:.75em; flex-wrap:wrap;'
+				}, [
+					E('button', {
+						'class': 'cbi-button cbi-button-action homeproxy-tcping-button',
+						'title': '测速',
+						'type': 'button',
+						'click': (ev) => runNodesTcping(collectNodeSections(grouphash), ev)
+					}, [ renderSpeedtestIcon('homeproxy-tcping-icon') ]),
+					E('span', {
+						'class': 'homeproxy-tcping-help',
+						'style': 'color:var(--text-color-medium, #777); line-height:1.4;'
+					}, TCPING_HELP_TEXT)
+				]);
+			};
 		};
 
 		m = new form.Map('homeproxy', _('Edit nodes'));
@@ -1493,6 +1741,14 @@ return view.extend({
 		o = s.taboption('node', form.SectionValue, '_node', form.GridSection, 'node');
 		ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 		ss.addremove = true;
+		ss.handleRemove = function(section_id, ev) {
+			return showNodeReferenceNotice(section_id).then((blocked) => {
+				if (blocked)
+					return Promise.resolve();
+
+				return form.GridSection.prototype.handleRemove.apply(this, [ section_id, ev ]);
+			});
+		};
 		ss.filter = function(section_id) {
 			for (let info of subinfo)
 				if (info.hash === uci.get(data[0], section_id, 'grouphash'))
@@ -1697,43 +1953,44 @@ return view.extend({
 			});
 		}
 
-		o = s.taboption('subscription', form.Button, '_remove_subscriptions', _('Remove all nodes from subscriptions'));
-		o.inputstyle = 'reset';
-		o.inputtitle = function() {
-			let subnodes = [];
-			uci.sections(data[0], 'node', (res) => {
-				if (res.grouphash)
-					subnodes = subnodes.concat(res['.name'])
-			});
+			o = s.taboption('subscription', form.Button, '_remove_subscriptions', _('Remove all nodes from subscriptions'));
+			o.inputstyle = 'reset';
+			o.inputtitle = function() {
+				let subnodes = [];
+				uci.sections(data[0], 'node', (res) => {
+					if (res.grouphash)
+						subnodes = subnodes.concat(res['.name'])
+				});
 
-			if (subnodes.length > 0) {
-				return _('Remove %s nodes').format(subnodes.length);
-			} else {
-				this.readonly = true;
-				return _('No subscription node');
+				if (subnodes.length > 0) {
+					return _('Remove %s nodes').format(subnodes.length);
+				} else {
+					this.readonly = true;
+					return _('No subscription node');
+				}
 			}
-		}
-		o.onclick = function() {
-			let subnodes = [];
-			uci.sections(data[0], 'node', (res) => {
-				if (res.grouphash)
-					subnodes = subnodes.concat(res['.name'])
-			});
+			o.onclick = function() {
+				let subnodes = [];
+				uci.sections(data[0], 'node', (res) => {
+					if (res.grouphash)
+						subnodes = subnodes.concat(res['.name'])
+				});
 
-			for (let i in subnodes)
-				uci.remove(data[0], subnodes[i]);
+				return fs.exec_direct('/etc/homeproxy/scripts/remove_subscription_nodes.uc', [ JSON.stringify({
+					node_ids: subnodes
+				}) ]).then((raw) => {
+					let res = JSON.parse(raw || '{}');
+					if (!res.result)
+						throw new Error(res.error || _('Unknown error.'));
 
-			if (subnodes.includes(uci.get(data[0], 'config', 'main_node')))
-				uci.set(data[0], 'config', 'main_node', 'nil');
-
-			if (subnodes.includes(uci.get(data[0], 'config', 'main_udp_node')))
-				uci.set(data[0], 'config', 'main_udp_node', 'nil');
-
-			this.inputtitle = _('%s nodes removed').format(subnodes.length);
-			this.readonly = true;
-
-			return this.map.save(null, true);
-		}
+					this.inputtitle = _('%s nodes removed').format(res.removed || 0);
+					this.readonly = true;
+					return location.reload();
+				}).catch((err) => {
+					ui.addNotification(null, E('p', _('An error occurred during removing subscription nodes: %s').format(err.message || err)));
+					return this.map.reset();
+				});
+			}
 		/* Subscriptions settings end */
 
 		return m.render();
