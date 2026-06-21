@@ -15,6 +15,10 @@
 'require view';
 
 'require homeproxy as hp';
+'require homeproxy.dashboard as hpDashboard';
+'require homeproxy.diagnostics as hpDiagnostics';
+'require homeproxy.node-filter as hpNodeFilter';
+'require homeproxy.routing-node as hpRoutingNode';
 'require tools.firewall as fwtool';
 'require tools.widgets as widgets';
 
@@ -54,41 +58,6 @@ const callWriteDomainList = rpc.declare({
 	expect: { '': {} }
 });
 
-const callValidateRegex = rpc.declare({
-	object: 'luci.homeproxy',
-	method: 'validate_regex',
-	params: ['pattern'],
-	expect: { '': {} }
-});
-
-const callPreviewNodeFilter = rpc.declare({
-	object: 'luci.homeproxy',
-	method: 'preview_node_filter',
-	params: ['manual_nodes', 'node_filter', 'node_filter_exclude', 'node'],
-	expect: { '': {} }
-});
-const callConfigDiagnostics = rpc.declare({
-	object: 'luci.homeproxy',
-	method: 'config_diagnostics',
-	expect: { '': {} }
-});
-
-function normalizeNodeList(value) {
-	let nodes = [];
-
-	if (value == null)
-		return nodes;
-
-	if (!Array.isArray(value))
-		value = [ value ];
-
-	for (let i = 0; i < value.length; i++)
-		if (value[i] && !nodes.includes(value[i]))
-			nodes.push(value[i]);
-
-	return nodes;
-}
-
 function getServiceStatus() {
 	return L.resolveDefault(callServiceList('homeproxy'), {}).then((res) => {
 		let isRunning = false;
@@ -110,37 +79,6 @@ function renderStatus(isRunning, version) {
 	return renderHTML;
 }
 
-function parseController(value) {
-	let result = {
-		hostname: '',
-		port: '',
-		https: false
-	};
-
-	if (!value)
-		return result;
-
-	try {
-		let url = new URL(value.match(/^https?:\/\//) ? value : 'http://' + value);
-		result.hostname = url.hostname;
-		result.port = url.port;
-		result.https = url.protocol === 'https:';
-	} catch(e) { }
-
-	return result;
-}
-
-function deriveProxyController(value) {
-	let controller = parseController(value || '192.168.9.1:9090');
-
-	if (!controller.hostname)
-		return '192.168.9.1:9091';
-
-	let hostname = controller.hostname.replace(/^\[(.*)\]$/, '$1');
-
-	return String.format('%s:9091', hostname.includes(':') ? '[' + hostname + ']' : hostname);
-}
-
 let stubValidator = {
 	factory: validation,
 	apply(type, value, args) {
@@ -160,7 +98,7 @@ return view.extend({
 			uci.load('homeproxy'),
 			hp.getBuiltinFeatures(),
 			network.getHostHints(),
-			L.resolveDefault(callConfigDiagnostics(), { result: true, items: [] })
+			hpDiagnostics.load()
 		]);
 	},
 
@@ -170,7 +108,7 @@ return view.extend({
 		let features = data[1],
 		    hosts = data[2]?.hosts;
 
-		hp.showConfigDiagnostics(data[3]);
+		hpDiagnostics.show(data[3]);
 
 		/* Cache all configured proxy nodes, they will be called multiple times */
 		let proxy_nodes = {};
@@ -183,92 +121,18 @@ return view.extend({
 					String.format('[%s]', nodeaddr) : nodeaddr) + ':' + nodeport));
 		});
 
-		let dashboardBaseUrl = function() {
-			let dashboard = uci.get(data[0], 'config', 'metacubexd_url') || 'https://metacubexd.pages.dev/#/overview',
-			    hash = dashboard.indexOf('#');
-
-			if (hash >= 0)
-				dashboard = dashboard.slice(0, hash);
-
-			return dashboard.replace(/\/+$/, '');
-		};
-
-		let dashboardConfiguredUrl = function() {
-			return uci.get(data[0], 'config', 'metacubexd_url') || 'https://metacubexd.pages.dev/#/overview';
-		};
-
-		let dashboardSetupUrl = function() {
-			let enabled = uci.get(data[0], 'config', 'clash_api_enabled') === '1',
-			    target = uci.get(data[0], 'config', 'clash_api_external_controller') || '192.168.9.1:9090',
-			    proxy = uci.get(data[0], 'config', 'clash_api_proxy_external_controller') || deriveProxyController(target),
-			    controller = parseController(proxy),
-			    secret = uci.get(data[0], 'config', 'clash_api_secret') || '';
-
-			if (!enabled || !controller.hostname)
-				return null;
-
-			let dashboard = dashboardConfiguredUrl(),
-			    base = dashboardBaseUrl();
-
-			if (dashboard.includes('yacd.metacubex.one'))
-				return dashboard;
-
-			let params = new URLSearchParams();
-			params.set('hostname', controller.hostname);
-			if (controller.port)
-				params.set('port', controller.port);
-			params.set(controller.https ? 'https' : 'http', '1');
-			if (secret)
-				params.set('secret', secret);
-
-			return base + '/#/setup?' + params.toString();
-		};
-
 		let renderDashboardButton = function() {
-			let url = dashboardSetupUrl();
-
-			if (!url)
-				return null;
-
-			return E('a', {
-				'class': 'btn cbi-button cbi-button-action',
-				'href': url,
-				'target': '_blank',
-				'rel': 'noreferrer noopener'
-			}, [ _('MetaCubeXD 面板') ]);
-		};
-
-		let routingNodeName = function(res) {
-			let type = _('Routing node');
-			if (res.node === 'urltest')
-				type = _('URLTest');
-			else if (res.node === 'selector')
-				type = _('Selector');
-
-			return String.format('[%s] %s',
-				type, res.label || res['.name']);
+			return hpDashboard.renderButton(uci, data[0]);
 		};
 
 		let addSelectableOutbounds = function(option, section_id, include_routing_nodes) {
-			for (let i in proxy_nodes)
-				option.value(i, proxy_nodes[i]);
-
-			if (!include_routing_nodes)
-				return;
-
-			uci.sections(data[0], 'routing_node', (res) => {
-				if (res.enabled === '1' && res['.name'] !== section_id)
-					option.value(res['.name'], routingNodeName(res));
-			});
+			hpRoutingNode.addSelectableOutbounds(option, data[0], proxy_nodes, section_id, include_routing_nodes);
 		};
 
-		let routing_node_names = {};
-		uci.sections(data[0], 'routing_node', (res) => {
-			routing_node_names[res['.name']] = routingNodeName(res);
-		});
+		let routing_node_names = hpRoutingNode.buildRoutingNodeNames(data[0]);
 
 		let nodeFilterPreviewName = function(node_id) {
-			return proxy_nodes[node_id] || routing_node_names[node_id] || node_id;
+			return hpRoutingNode.nodeDisplayName(node_id, proxy_nodes, routing_node_names);
 		};
 
 		let currentOptionValue = function(section, section_id, option, fallback) {
@@ -283,71 +147,9 @@ return view.extend({
 			return (value != null) ? value : fallback;
 		};
 
-		let setNodeFilterPreviewVisible = function(container, visible) {
-			let row = container.closest('.cbi-value');
-			if (row)
-				row.style.display = visible ? '' : 'none';
-		};
-
-		let renderNodeFilterPreview = function(container, res) {
-			if (!res.result) {
-				let message = _('Expecting: %s').format(_('valid regular expression'));
-				if (res.error)
-					message += ': ' + res.error;
-
-				dom.content(container, E('em', { 'style': 'color: #a33' }, message));
-				return;
-			}
-
-			let nodes = normalizeNodeList(res.nodes);
-
-			if (!nodes.length) {
-				dom.content(container, E('em', {}, _('No effective nodes.')));
-				return;
-			}
-
-			dom.content(container, E('ul', {
-				'style': 'margin: 0; padding-left: 1.4em; max-height: 28em; overflow: auto;'
-			}, nodes.map((node_id) => E('li', {
-				'title': node_id
-			}, nodeFilterPreviewName(node_id)))));
-		};
-
 		let pathCache = {};
 		let selectorHasPath = function(start, target, seen) {
-			if (!start || !target)
-				return false;
-			if (start === target)
-				return true;
-
-			let key = start + '->' + target;
-			if (pathCache[key] !== undefined)
-				return pathCache[key];
-
-			if (seen[start])
-				return false;
-
-			seen[start] = true;
-
-			let found = false;
-			uci.sections(data[0], 'routing_node', (res) => {
-				if (found || res['.name'] !== start)
-					return;
-
-				let nodes = res.node === 'urltest' ? res.urltest_nodes : res.selector_nodes;
-				for (let i in (nodes || [])) {
-					if (nodes[i] === target || selectorHasPath(nodes[i], target, seen)) {
-						found = true;
-						return;
-					}
-				}
-
-				if (res.outbound === target || selectorHasPath(res.outbound, target, seen))
-					found = true;
-			});
-
-			pathCache[key] = found;
-			return found;
+			return hpRoutingNode.selectorHasPath(data[0], start, target, pathCache, seen || {});
 		};
 
 		m = new form.Map('homeproxy', _('HomeProxy'),
@@ -753,7 +555,7 @@ return view.extend({
 			so.value(i, proxy_nodes[i]);
 		so.depends('node', 'urltest');
 		so.validate = function(section_id) {
-			let value = normalizeNodeList(currentOptionValue(this.section, section_id, 'urltest_nodes', []));
+			let value = hpNodeFilter.normalizeNodeList(currentOptionValue(this.section, section_id, 'urltest_nodes', []));
 			let node_filter = currentOptionValue(this.section, section_id, 'node_filter', '');
 			if (section_id && !value.length && !node_filter)
 				return _('Expecting: %s').format(_('non-empty value'));
@@ -774,7 +576,7 @@ return view.extend({
 		}
 		so.depends('node', 'selector');
 		so.validate = function(section_id) {
-			let value = normalizeNodeList(currentOptionValue(this.section, section_id, 'selector_nodes', []));
+			let value = hpNodeFilter.normalizeNodeList(currentOptionValue(this.section, section_id, 'selector_nodes', []));
 			let node_filter = currentOptionValue(this.section, section_id, 'node_filter', '');
 			if (section_id && !value.length && !node_filter)
 				return _('Expecting: %s').format(_('non-empty value'));
@@ -789,13 +591,15 @@ return view.extend({
 		so = ss.option(form.Value, 'node_filter', _('Node regex'),
 			_('Use POSIX ERE syntax. Lookahead/lookbehind such as (?!) and (?<=) are unsupported.') +
 			'<br/>' +
+			_('Maximum regex length is 512 characters; preview and generation cap regex-expanded nodes to prevent oversized groups.') +
+			'<br/>' +
 			_('Effective nodes are recalculated automatically after saving and applying manual node changes, or after manual/scheduled subscription updates finish.'));
 		so.depends('node', 'urltest');
 		so.depends('node', 'selector');
 		so.forcewrite = true;
 		so.write = function(section_id, value) {
 			// LuCI 的字段校验是同步的，RPC 校验放在 write() 里让保存流程等待结果。
-			return L.resolveDefault(callValidateRegex(value), { result: false, error: _('Unknown error.') }).then((res) => {
+			return hpNodeFilter.validate(value).then((res) => {
 				if (!res.result) {
 					let message = _('Expecting: %s').format(_('valid regular expression'));
 					if (res.error)
@@ -820,7 +624,7 @@ return view.extend({
 		so.forcewrite = true;
 		so.write = function(section_id, value) {
 			// 同 node_filter：RPC 校验放在 write() 里让保存流程等待结果。
-			return L.resolveDefault(callValidateRegex(value), { result: false, error: _('Unknown error.') }).then((res) => {
+			return hpNodeFilter.validate(value).then((res) => {
 				if (!res.result) {
 					let message = _('Expecting: %s').format(_('valid regular expression'));
 					if (res.error)
@@ -857,27 +661,27 @@ return view.extend({
 				    manual_nodes = [];
 
 				if (!String(node_filter).trim() && !String(node_filter_exclude).trim()) {
-					setNodeFilterPreviewVisible(container, false);
+					hpNodeFilter.setPreviewVisible(container, false);
 					dom.content(container, '');
 					return;
 				}
 
-				setNodeFilterPreviewVisible(container, true);
+				hpNodeFilter.setPreviewVisible(container, true);
 				dom.content(container, _('Loading...'));
 
 				if (node === 'urltest')
-					manual_nodes = normalizeNodeList(currentOptionValue(this.section, section_id, 'urltest_nodes', []));
+					manual_nodes = hpNodeFilter.normalizeNodeList(currentOptionValue(this.section, section_id, 'urltest_nodes', []));
 				else if (node === 'selector')
-					manual_nodes = normalizeNodeList(currentOptionValue(this.section, section_id, 'selector_nodes', []));
+					manual_nodes = hpNodeFilter.normalizeNodeList(currentOptionValue(this.section, section_id, 'selector_nodes', []));
 
-				L.resolveDefault(callPreviewNodeFilter(
+				hpNodeFilter.preview(
 					manual_nodes,
 					node_filter,
 					node_filter_exclude,
 					node
-				), { result: false, error: _('Unknown error.') }).then((res) => {
+				).then((res) => {
 					if (current_id === request_id)
-						renderNodeFilterPreview(container, res);
+						hpNodeFilter.renderPreview(container, res, nodeFilterPreviewName);
 				});
 			};
 

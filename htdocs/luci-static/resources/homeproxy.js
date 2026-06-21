@@ -233,7 +233,11 @@ return baseclass.extend({
 
 	showConfigDiagnostics(diagnostics) {
 		let items = diagnostics?.items || [],
-		    generatedAt = null;
+		    generatedAt = null,
+		    noticeColor = '#1f232b',
+		    noticeAccentColor = '#8b1e1e';
+
+		document.querySelectorAll('.homeproxy-config-diagnostics').forEach((node) => node.remove());
 
 		if (!items.length)
 			return;
@@ -244,19 +248,19 @@ return baseclass.extend({
 				generatedAt = date.toLocaleString();
 		}
 
-		ui.addNotification(null, E('div', [
-			E('p', _('HomeProxy 配置生成时发现以下问题，请检查并手动修复：')),
-			E('p', { 'style': 'color:var(--text-color-medium,#666);' },
+		ui.addNotification(null, E('div', { 'style': 'color:%s;'.format(noticeColor) }, [
+			E('p', { 'style': 'color:%s;font-weight:600;'.format(noticeColor) }, _('HomeProxy 发现以下问题，请检查并手动修复：')),
+			E('p', { 'style': 'color:%s;font-weight:600;'.format(noticeAccentColor) },
 				generatedAt
-					? _('以下诊断来自上次生成配置（%s）。修复后请重新应用或重启服务以刷新诊断。').format(generatedAt)
-					: _('以下诊断来自上次生成配置。修复后请重新应用或重启服务以刷新诊断。')),
-			E('ul', items.map((item) => E('li', [
-				E('strong', '[' + (item.type || 'warning') + '] '),
+					? _('以下诊断来自上次配置生成或订阅更新（%s）。修复后请重新应用、重启服务或重新更新订阅以刷新诊断。').format(generatedAt)
+					: _('以下诊断来自上次配置生成或订阅更新。修复后请重新应用、重启服务或重新更新订阅以刷新诊断。')),
+			E('ul', { 'style': 'color:%s;'.format(noticeColor) }, items.map((item) => E('li', { 'style': 'color:%s;'.format(noticeColor) }, [
+				E('strong', { 'style': 'color:%s;'.format(noticeColor) }, '[' + (item.type || 'warning') + '] '),
 				item.message || '',
-				item.suggestion ? E('div', { 'style': 'margin-top:.2em;color:var(--text-color-medium,#666);' },
+				item.suggestion ? E('div', { 'style': 'margin-top:.2em;color:%s;font-weight:600;'.format(noticeAccentColor) },
 					_('建议：') + item.suggestion) : ''
 			])))
-		]), 'warning');
+		]), 'warning', 'homeproxy-config-diagnostics');
 	},
 
 	renderSectionAdd(section, extra_class) {

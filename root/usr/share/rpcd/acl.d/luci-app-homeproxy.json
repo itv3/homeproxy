@@ -3,7 +3,6 @@
 		"description": "Grant access to homeproxy configuration",
 		"read": {
 			"file": {
-				"/etc/homeproxy/scripts/node_references_ctl.uc": [ "exec" ],
 				"/var/run/homeproxy/homeproxy.log": [ "read" ],
 				"/var/run/homeproxy/sing-box-c.log": [ "read" ],
 				"/var/run/homeproxy/sing-box-s.log": [ "read" ]
@@ -13,9 +12,11 @@
 				"luci.homeproxy": [
 					"config_diagnostics",
 					"connection_check",
+					"node_references",
 					"preview_node_filter",
 					"resources_get_version",
 					"singbox_get_features",
+					"update_subscriptions_status",
 					"validate_regex"
 				],
 				"luci.homeproxy_tcping": [
@@ -25,13 +26,11 @@
 			},
 			"uci": [ "homeproxy" ]
 		},
-		"write": {
-			"file": {
-				"/etc/homeproxy/scripts/remove_subscription_nodes.uc": [ "exec" ],
-				"/etc/homeproxy/scripts/update_subscriptions.uc": [ "exec" ],
-				"/tmp/homeproxy_certificate.tmp": [ "write" ],
-				"/tmp/homeproxy-backup-*.tar.gz": [ "read" ],
-				"/tmp/homeproxy-restore-*.tar.gz": [ "write" ]
+			"write": {
+				"file": {
+					"/tmp/homeproxy_certificate.tmp": [ "write" ],
+					"/tmp/homeproxy-backup-*.tar.gz": [ "read" ],
+					"/tmp/homeproxy-restore-*.tar.gz": [ "write" ]
 			},
 			"ubus": {
 				"luci.homeproxy": [
@@ -42,12 +41,14 @@
 					"backup_get_upload_path",
 					"backup_validate",
 					"backup_restore",
-					"certificate_write",
-					"log_clean",
-					"resources_update",
-					"singbox_generator"
-				]
-			},
+						"certificate_write",
+						"log_clean",
+						"remove_subscription_nodes",
+						"resources_update",
+						"singbox_generator",
+						"update_subscriptions"
+					]
+				},
 			"uci": [ "homeproxy" ]
 		}
 	}

@@ -25,6 +25,7 @@ const uciinfra = 'infra',
       ucirouting = 'routing',
       uciroutingnode = 'routing_node',
       uciroutingrule = 'routing_rule',
+      ucisubscription = 'subscription',
       uciserver = 'server';
 
 function firstValue(value) {
@@ -198,6 +199,9 @@ if (isEmpty(uci.get(uciconfig, ucimain, 'log_level')))
 
 if (isEmpty(uci.get(uciconfig, uciserver, 'log_level')))
 	uci.set(uciconfig, uciserver, 'log_level', 'warn');
+
+if (isEmpty(uci.get(uciconfig, ucisubscription, 'allow_unsupported_tls_pin_fallback')))
+	uci.set(uciconfig, ucisubscription, 'allow_unsupported_tls_pin_fallback', '0');
 
 /* Clash API dashboard integration */
 if (isEmpty(uci.get(uciconfig, ucimain, 'clash_api_enabled')))

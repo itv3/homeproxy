@@ -66,6 +66,79 @@ function sort_outbound_tag_items(items) {
 	}
 }
 
+function sectionFallbackTag(section) {
+	return 'cfg-' + section + '-out';
+}
+
+function shadowtlsFallbackTag(section) {
+	return sectionFallbackTag(section) + '-shadowtls';
+}
+
+function shadowtlsTagFromOutbound(tag) {
+	if (type(tag) !== 'string' || tag === '')
+		return tag;
+
+	if (match(tag, /-out$/))
+		return tag + '-shadowtls';
+
+	return tag + '-out-shadowtls';
+}
+
+function renameTags(value, rename, rename_string) {
+	let t = type(value);
+
+	if (t === 'string')
+		return (rename_string && value in rename) ? rename[value] : value;
+
+	if (t === 'object') {
+		for (let k in value) {
+			if (k in ['tag', 'outbound', 'outbounds', 'detour', 'default', 'final', 'download_detour'])
+				value[k] = renameTags(value[k], rename, true);
+			else
+				value[k] = renameTags(value[k], rename, false);
+		}
+		return value;
+	}
+
+	if (t === 'array') {
+		for (let i = 0; i < length(value); i++)
+			value[i] = renameTags(value[i], rename, rename_string);
+		return value;
+	}
+
+	return value;
+}
+
+function buildTagRenameMap(tag_map) {
+	let rename = {};
+
+	if (type(tag_map) !== 'object')
+		return rename;
+
+	for (let section in tag_map) {
+		let old_tag = sectionFallbackTag(section),
+		    final_tag = tag_map[section];
+
+		rename[old_tag] = final_tag;
+		rename[old_tag + '-shadowtls'] = shadowtlsTagFromOutbound(final_tag);
+	}
+
+	return rename;
+}
+
+function checkUniqueTags(entries, seen, on_duplicate) {
+	for (let entry in (entries || [])) {
+		let tag = (type(entry) === 'object') ? entry.tag : null;
+		if (tag === null)
+			continue;
+
+		if (seen[tag] && type(on_duplicate) === 'function')
+			on_duplicate(tag);
+
+		seen[tag] = true;
+	}
+}
+
 export function build_outbound_tag_map(uci) {
 	const uciconfig = 'homeproxy';
 	let items = [],
@@ -133,4 +206,52 @@ export function build_outbound_tag_map(uci) {
 	}
 
 	return tag_map;
+};
+
+export function get_outbound_tag(tag_map, section) {
+	if (type(tag_map) === 'object' && section in tag_map)
+		return tag_map[section];
+
+	return sectionFallbackTag(section);
+};
+
+export function get_shadowtls_outbound_tag(tag_map, section) {
+	return shadowtlsTagFromOutbound(get_outbound_tag(tag_map, section));
+};
+
+export function get_fallback_outbound_tag(section) {
+	return sectionFallbackTag(section);
+};
+
+export function get_fallback_shadowtls_outbound_tag(section) {
+	return shadowtlsFallbackTag(section);
+};
+
+export function apply_outbound_tag_rename(client_config, tag_map) {
+	renameTags(client_config, buildTagRenameMap(tag_map), false);
+	return client_config;
+};
+
+export function assert_unique_outbound_tags(client_config, on_duplicate) {
+	let seen = {};
+
+	checkUniqueTags(client_config?.outbounds, seen, on_duplicate);
+	checkUniqueTags(client_config?.endpoints, seen, on_duplicate);
+
+	return true;
+};
+
+export function normalize_outbound_target(target, tag_map) {
+	if (type(target) !== 'string' || target === '')
+		return target;
+
+	if (type(tag_map) === 'object')
+		for (let section in tag_map) {
+			let final_tag = tag_map[section];
+			if (target === final_tag || target === get_fallback_outbound_tag(section))
+				return section;
+		}
+
+	let matched = match(target, /^cfg-(.+)-out$/);
+	return matched ? matched[1] : target;
 };

@@ -66,6 +66,7 @@
    - 默认开启 Clash API，并添加 HomeProxy 面板代理，用于隐藏 SS2022 + ShadowTLS 生成链路中的中间层节点 `cfg-xxx-out-shadowtls`。
    - 客户端页面添加 `MetaCubeXD 面板` 按钮。
    - 默认跳转到 [https://metacubexd.pages.dev/#/overview](https://metacubexd.pages.dev/#/overview)，跳转时自动带入 HomeProxy 面板代理的 host、port、secret 等参数。
+   - 使用远程 MetaCubeXD 面板时，Clash API secret 会提供给该网页；安全要求较高时建议使用自建面板或本地面板。
    - 可通过 MetaCubeXD 面板切换节点、测速、查看连接状态等。
 
 7. 运行时 outbound tag 映射为节点真实名称
@@ -158,14 +159,22 @@ find /etc/homeproxy /etc/config -name "*.apk-new" -exec rm -f {} \; 2>/dev/null 
 只看本 README 应该能完成一次新功能开发和发布。当前自定义版主要涉及下面几类文件：
 
 ```text
-htdocs/luci-static/resources/view/homeproxy/client.js   # 客户端页面、路由节点、路由规则、MetaCubeXD 面板按钮
-htdocs/luci-static/resources/view/homeproxy/node.js     # 节点页面、SS2022 + ShadowTLS 表单
+htdocs/luci-static/resources/view/homeproxy/client.js   # 客户端页面、路由节点、路由规则接入
+htdocs/luci-static/resources/view/homeproxy/node.js     # 节点页面、SS2022 + ShadowTLS 表单接入
 htdocs/luci-static/resources/view/homeproxy/backup.js   # HomeProxy 源配置备份 / 恢复页面
+htdocs/luci-static/resources/homeproxy/dashboard.js     # MetaCubeXD 面板入口 helper
+htdocs/luci-static/resources/homeproxy/diagnostics.js   # 配置诊断前端 helper
+htdocs/luci-static/resources/homeproxy/node-filter.js   # 节点正则预览前端 helper
+htdocs/luci-static/resources/homeproxy/tcping.js        # 节点测速前端 helper
 root/etc/homeproxy/scripts/generate_client.uc           # 生成 sing-box 客户端配置
 root/etc/homeproxy/scripts/clash_api_proxy.uc           # MetaCubeXD 读取用 Clash API 过滤代理
 root/etc/homeproxy/scripts/migrate_config.uc            # 旧配置迁移和默认配置补齐
+root/etc/homeproxy/scripts/node_filter.uc               # 节点正则限制 helper
+root/etc/homeproxy/scripts/routing_target.uc            # 路由节点解析 helper
 root/etc/config/homeproxy                               # 新安装时的默认配置
 root/usr/share/rpcd/ucode/luci.homeproxy                # HomeProxy RPC，包括备份 / 恢复
+root/usr/share/rpcd/ucode/luci.homeproxy_tcping         # 节点测速 RPC
+tests/generator-golden                                  # 生成器 golden fixture 和目标机运行器
 .github/build-ipk.sh                                    # APK/IPK 打包脚本
 .github/workflows/build-ipk.yml                        # push / PR 后自动构建 APK/IPK artifact
 .github/workflows/release-custom-apk.yml               # tag 后现场构建 APK 并发布 GitHub Release
@@ -189,6 +198,13 @@ git fetch upstream
 ```sh
 git diff --check
 sh -n install.sh
+node tests/generator-golden/check_cases.js
+```
+
+如果改了 `generate_client.uc`，还需要在带 `ucode` 的 OpenWrt/ImmortalWrt 目标机上运行完整 golden fixture：
+
+```sh
+ucode -S tests/generator-golden/run_cases.uc tests/generator-golden
 ```
 
 如果改了 GitHub Actions workflow，可额外检查 YAML：

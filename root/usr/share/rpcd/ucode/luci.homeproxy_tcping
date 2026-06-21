@@ -5,14 +5,17 @@ import { popen, readfile } from 'fs';
 import { cursor } from 'uci';
 import { urlencode } from 'luci.http';
 
-import { build_outbound_tag_map } from '/etc/homeproxy/scripts/outbound_tag.uc';
+import { build_outbound_tag_map, get_outbound_tag } from '/etc/homeproxy/scripts/outbound_tag.uc';
 
 const TCPING_MAX_NODES = 300;
 const SECTION_MAX_LEN = 128;
 const BATCH_SIZE = 50;
+const TCPING_COOLDOWN = 3;
 const DELAY_TIMEOUT = 5000;
 const FETCH_TIMEOUT = 30000;
 const DELAY_TEST_URL = 'https://www.gstatic.com/generate_204';
+
+let last_tcping_at = 0;
 
 // urlencode() 只负责 URL/path 编码，不能作为 shell 注入防护；所有进入 shell 命令的动态值都必须继续经过 shellquote()。
 function shellquote(s) {
@@ -101,6 +104,20 @@ function stampResult(result) {
 	return result;
 }
 
+function reserveTcpingSlot() {
+	let now = time(),
+	    wait = TCPING_COOLDOWN - (now - last_tcping_at);
+
+	if (last_tcping_at > 0 && wait > 0)
+		return {
+			result: false,
+			error: sprintf('测速请求过于频繁，请 %d 秒后重试。', wait)
+		};
+
+	last_tcping_at = now;
+	return null;
+}
+
 function loadedProxies(hpuci) {
 	return clashApiGet(hpuci, '/proxies', FETCH_TIMEOUT);
 }
@@ -118,7 +135,7 @@ function loadedProxyTags(payload) {
 }
 
 function nodeTag(tag_map, section) {
-	return tag_map[section] || ('cfg-' + section + '-out');
+	return get_outbound_tag(tag_map, section);
 }
 
 function runtimeNodeTag(hpuci, tag_map, section) {
@@ -297,6 +314,10 @@ const methods = {
 			if (!controllerBase(hpuci))
 				return { result: false, error: 'Clash API 端口无效，请设置为 1-65535。' };
 
+			let cooldown = reserveTcpingSlot();
+			if (cooldown)
+				return cooldown;
+
 			let payload = loadedProxies(hpuci);
 
 			return {
@@ -349,6 +370,10 @@ const methods = {
 
 				if (!controllerBase(hpuci))
 					return { result: false, error: 'Clash API 端口无效，请设置为 1-65535。' };
+
+				let cooldown = reserveTcpingSlot();
+				if (cooldown)
+					return cooldown;
 
 				let payload = loadedProxies(hpuci),
 				    tag_results = testNodesByProxyDelayBatch(hpuci, payload, tags);

@@ -18,7 +18,7 @@ const ucimain = 'config';
 const shadowtls_suffix = '-out-shadowtls';
 const filter_timeout = 10000;
 const fallback_delay_limit = 5;
-const upstream_read_timeout = 5;  // seconds; total read deadline for synchronous fetchUpstream
+const upstream_read_timeout = 5;  // 秒；单次上游读取超时
 
 // Resource limits
 const MAX_CONNECTIONS = 64;
@@ -34,6 +34,15 @@ uci.load(uciconfig);
 
 function isEmpty(value) {
 	return !value || value === 'nil' || (type(value) in ['array', 'object'] && length(value) === 0);
+}
+
+function toArray(value) {
+	if (type(value) === 'array')
+		return value;
+	else if (isEmpty(value))
+		return [];
+
+	return [ value ];
 }
 
 function parseController(value, default_port) {
@@ -52,7 +61,7 @@ function parseController(value, default_port) {
 }
 
 function deriveProxyController(target) {
-	target = parseController(target || '192.168.9.1:9090', 9090);
+	target = parseController(target || '127.0.0.1:9090', 9090);
 
 	if (isEmpty(target.host))
 		target.host = '192.168.9.1';
@@ -456,12 +465,7 @@ function buildJsonResponse(request, payload) {
 	    origin = headerValue(request.headers, 'Origin');
 
 	if (!isEmpty(origin)) {
-		// Only allow known dashboard origins
-		const allowed_origins = [
-			'https://metacubexd.pages.dev',
-			'https://yacd.metacubex.one',
-			'https://yacd.haishan.me'
-		];
+		let allowed_origins = toArray(uci.get(uciconfig, ucimain, 'clash_api_allow_origin'));
 
 		if (index(allowed_origins, origin) >= 0) {
 			push(headers, 'Access-Control-Allow-Origin: ' + origin);
@@ -522,125 +526,180 @@ function upstreamRequest(method, path, request, body) {
 	return join("\r\n", headers) + "\r\n\r\n" + body;
 }
 
-// Synchronous upstream fetch for filtered responses.
-// NOTE: This blocks the event loop, so reads are bounded by a total deadline
-// (upstream_read_timeout) and each recv waits for readiness via socket.poll().
-// An upstream that accepts the connection but never replies therefore can no
-// longer hang the proxy indefinitely. Only used for /proxies and /group/*/delay
-// paths; regular relay paths use async event-driven forwarding.
-// TODO: Convert to async uloop-based implementation to avoid blocking entirely.
-function fetchUpstream(method, path, request, body) {
+function fetchUpstreamAsync(method, path, request, body, done) {
 	let upstream = socket.connect(target.host, target.port, null, 3000);
 
-	if (upstream === null)
-		return null;
-
-	let raw = '';
-
-	if (!sendAll(upstream, upstreamRequest(method, path, request, body))) {
-		upstream.close();
+	if (upstream === null) {
+		done(null);
 		return null;
 	}
 
-	// Total read deadline. time() is whole seconds, which is adequate here.
-	let deadline = time() + upstream_read_timeout;
+	let fetch = {
+		upstream: upstream,
+		handle: null,
+		timer: null,
+		raw: '',
+		finished: false
+	};
 
-	// Cap iterations as a secondary bound: max 512 × 16KB = 8MB.
-	for (let i = 0; i < 512; i++) {
-		let remaining = (deadline - time()) * 1000;
-		if (remaining <= 0)
-			break;
+	function finish(raw) {
+		if (fetch.finished)
+			return;
 
-		// Wait up to the remaining budget (in <=1s slices) for readable data.
-		// Empty result means the slice elapsed with no data: loop and re-check
-		// the deadline rather than blocking in recv().
-		let ready = socket.poll((remaining < 1000) ? remaining : 1000, [ upstream, socket.POLLIN ]);
-		if (!length(ready))
-			continue;
+		fetch.finished = true;
 
-		let chunk = upstream.recv(16384);
-
-		if (chunk === null)
-			break;
-
-		if (length(chunk) === 0)
-			break;
-
-		raw += chunk;
-
-		if (responseComplete(raw))
-			break;
-	}
-
-	upstream.close();
-
-	return length(raw) ? raw : null;
-}
-
-function fetchVisibleProxyGroup(group_name, request) {
-	let raw = fetchUpstream('GET', '/proxies', request);
-	if (raw === null)
-		return null;
-
-	let payload = filterProxiesPayload(parseJsonBody(raw));
-	if (type(payload) !== 'object' || type(payload.proxies) !== 'object')
-		return null;
-
-	let group = payload.proxies[group_name];
-	return (type(group) === 'object') ? group : null;
-}
-
-function testProxyDelay(proxy_name, query, request) {
-	let raw = fetchUpstream('GET',
-		'/proxies/' + pathSegment(proxy_name) + '/delay' + query,
-		request);
-
-	if (raw === null || responseStatus(raw) < 200 || responseStatus(raw) >= 300)
-		return 0;
-
-	let payload = parseJsonBody(raw);
-
-	if (type(payload) === 'object' && type(payload.delay) === 'double')
-		return int(payload.delay);
-
-	if (type(payload) === 'object' && type(payload.delay) === 'int')
-		return payload.delay;
-
-	return 0;
-}
-
-function fallbackGroupDelay(group_info, request) {
-	let group = fetchVisibleProxyGroup(group_info.name, request);
-	if (group === null || type(group.all) !== 'array')
-		return null;
-
-	let results = {},
-	    tested = 0,
-	    truncated = false;
-
-	for (let proxy_name in group.all) {
-		if (isShadowTlsTag(proxy_name))
-			continue;
-
-		if (tested >= fallback_delay_limit) {
-			truncated = true;
-			break;
+		if (fetch.handle) {
+			fetch.handle.delete();
+			fetch.handle = null;
 		}
 
-		results[proxy_name] = testProxyDelay(proxy_name, group_info.query, request);
-		tested++;
+		if (fetch.timer) {
+			fetch.timer.cancel();
+			fetch.timer = null;
+		}
+
+		if (fetch.upstream) {
+			fetch.upstream.close();
+			fetch.upstream = null;
+		}
+
+		done(raw);
 	}
 
-	if (truncated)
-		warn(sprintf('homeproxy clash api proxy: fallback delay for group %s limited to first %d visible proxies\n',
-			group_info.name, fallback_delay_limit));
+	if (!sendAll(upstream, upstreamRequest(method, path, request, body))) {
+		finish(null);
+		return fetch;
+	}
 
-	return results;
+	fetch.timer = uloop.timer(upstream_read_timeout * 1000, () => finish(null));
+	fetch.handle = uloop.handle(upstream, (events, eof, error) => {
+		if (events & uloop.ULOOP_READ) {
+			let received = recvAvailable(upstream);
+
+			if (length(received.data)) {
+				if (length(fetch.raw) + length(received.data) > MAX_RESPONSE_BUFFER_SIZE) {
+					warn(sprintf('homeproxy clash api proxy: async fetch response exceeded %d bytes\n', MAX_RESPONSE_BUFFER_SIZE));
+					finish(null);
+					return;
+				}
+
+				fetch.raw += received.data;
+			}
+
+			if (responseComplete(fetch.raw) || received.eof) {
+				finish(length(fetch.raw) ? fetch.raw : null);
+				return;
+			}
+		}
+
+		if (eof || error)
+			finish(length(fetch.raw) ? fetch.raw : null);
+	}, uloop.ULOOP_READ);
+
+	return fetch;
 }
 
-function handleGroupDelay(conn, request, group_info) {
-	let raw = fetchUpstream(request.method, request.path, request, request.body),
-	    payload = parseJsonBody(raw),
+function fetchVisibleProxyGroupAsync(group_name, request, done) {
+	fetchUpstreamAsync('GET', '/proxies', request, null, (raw) => {
+		if (raw === null) {
+			done(null);
+			return;
+		}
+
+		let payload = filterProxiesPayload(parseJsonBody(raw));
+		if (type(payload) !== 'object' || type(payload.proxies) !== 'object') {
+			done(null);
+			return;
+		}
+
+		let group = payload.proxies[group_name];
+		done((type(group) === 'object') ? group : null);
+	});
+}
+
+function testProxyDelayAsync(proxy_name, query, request, done) {
+	fetchUpstreamAsync('GET',
+		'/proxies/' + pathSegment(proxy_name) + '/delay' + query,
+		request,
+		null,
+		(raw) => {
+			if (raw === null || responseStatus(raw) < 200 || responseStatus(raw) >= 300) {
+				done(0);
+				return;
+			}
+
+			let payload = parseJsonBody(raw);
+
+			if (type(payload) === 'object' && type(payload.delay) === 'double') {
+				done(int(payload.delay));
+				return;
+			}
+
+			if (type(payload) === 'object' && type(payload.delay) === 'int') {
+				done(payload.delay);
+				return;
+			}
+
+			done(0);
+		});
+}
+
+function fallbackGroupDelayAsync(group_info, request, progress, done) {
+	fetchVisibleProxyGroupAsync(group_info.name, request, (group) => {
+		if (progress)
+			progress();
+
+		if (group === null || type(group.all) !== 'array') {
+			done(null);
+			return;
+		}
+
+		let results = {},
+		    candidates = [],
+		    truncated = false;
+
+		for (let proxy_name in group.all) {
+			if (isShadowTlsTag(proxy_name))
+				continue;
+
+			if (length(candidates) >= fallback_delay_limit) {
+				truncated = true;
+				break;
+			}
+
+			push(candidates, proxy_name);
+		}
+
+		if (truncated)
+			warn(sprintf('homeproxy clash api proxy: fallback delay for group %s limited to first %d visible proxies\n',
+				group_info.name, fallback_delay_limit));
+
+		function next(index) {
+			if (index >= length(candidates)) {
+				done(results);
+				return;
+			}
+
+			let proxy_name = candidates[index];
+			testProxyDelayAsync(proxy_name, group_info.query, request, (delay) => {
+				results[proxy_name] = delay;
+
+				if (progress)
+					progress();
+
+				next(index + 1);
+			});
+		}
+
+		next(0);
+	});
+}
+
+function finishGroupDelay(conn, request, group_info, raw) {
+	if (!connections[conn.id])
+		return;
+
+	let payload = parseJsonBody(raw),
 	    status = raw === null ? 0 : responseStatus(raw);
 
 	if (type(payload) === 'object')
@@ -649,20 +708,37 @@ function handleGroupDelay(conn, request, group_info) {
 	if (status >= 200 && status < 300 && !isEmptyObject(payload)) {
 		sendAll(conn.client, buildJsonResponse(request, payload));
 		closeConnection(conn);
-		return true;
+		return;
 	}
 
-	payload = fallbackGroupDelay(group_info, request);
-	if (payload !== null) {
-		sendAll(conn.client, buildJsonResponse(request, payload));
+	resetTimer(conn);
+	fallbackGroupDelayAsync(group_info, request, () => resetTimer(conn), (fallback_payload) => {
+		if (!connections[conn.id])
+			return;
+
+		if (fallback_payload !== null) {
+			sendAll(conn.client, buildJsonResponse(request, fallback_payload));
+			closeConnection(conn);
+			return;
+		}
+
+		if (raw !== null)
+			sendAll(conn.client, raw);
+
 		closeConnection(conn);
-		return true;
+	});
+}
+
+function handleGroupDelay(conn, request, group_info) {
+	if (conn.client_handle) {
+		conn.client_handle.delete();
+		conn.client_handle = null;
 	}
 
-	if (raw !== null)
-		sendAll(conn.client, raw);
-
-	closeConnection(conn);
+	conn.request_buffer = '';
+	conn.timer = uloop.timer(filter_timeout, () => closeConnection(conn));
+	fetchUpstreamAsync(request.method, request.path, request, request.body,
+		(raw) => finishGroupDelay(conn, request, group_info, raw));
 	return true;
 }
 
@@ -877,7 +953,7 @@ const clash_api_enabled = uci.get(uciconfig, ucimain, 'clash_api_enabled') || '0
 if (clash_api_enabled !== '1')
 	exit(0);
 
-target = parseController(uci.get(uciconfig, ucimain, 'clash_api_external_controller') || '192.168.9.1:9090', 9090);
+target = parseController(uci.get(uciconfig, ucimain, 'clash_api_external_controller') || '127.0.0.1:9090', 9090);
 listen = isEmpty(uci.get(uciconfig, ucimain, 'clash_api_proxy_external_controller'))
 	? deriveProxyController((index(target.host, ':') >= 0 ? '[' + target.host + ']' : target.host) + ':' + target.port)
 	: parseController(uci.get(uciconfig, ucimain, 'clash_api_proxy_external_controller'), 9091);

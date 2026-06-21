@@ -14,10 +14,32 @@ import { cursor } from 'uci';
 
 import {
 	isEmpty, parseURL, strToBool, strToInt, strToTime,
-	removeBlankAttrs, validation, HP_DIR, RUN_DIR
+	removeBlankAttrs, validation, HP_DIR as DEFAULT_HP_DIR, RUN_DIR as DEFAULT_RUN_DIR
 } from 'homeproxy';
-import { build_outbound_tag_map } from 'outbound_tag';
+import {
+	apply_outbound_tag_rename as applyOutboundTagRenameHelper,
+	assert_unique_outbound_tags as assertUniqueOutboundTagsHelper,
+	build_outbound_tag_map,
+	get_outbound_tag,
+	get_shadowtls_outbound_tag,
+	get_fallback_outbound_tag
+} from 'outbound_tag';
+import { expand_node_filter as expandNodeFilterHelper } from 'node_filter';
+import * as routingTarget from 'routing_target';
 
+function testRootArg() {
+	const argv = (type(ARGV) === 'array') ? ARGV : [];
+
+	for (let i = 0; i < length(argv); i++)
+		if (argv[i] === '--test-root' && !isEmpty(argv[i + 1]))
+			return argv[i + 1];
+
+	return null;
+}
+
+const TEST_ROOT = testRootArg();
+const HP_DIR = TEST_ROOT ? TEST_ROOT + '/etc/homeproxy' : DEFAULT_HP_DIR;
+const RUN_DIR = TEST_ROOT ? TEST_ROOT + '/var/run/homeproxy' : DEFAULT_RUN_DIR;
 const DIAGNOSTICS_PATH = RUN_DIR + '/config-diagnostics.json';
 
 /* 配置错误与诊断收集 */
@@ -36,15 +58,6 @@ function hasErrors() {
 		if (err.type === 'error')
 			return true;
 	return false;
-}
-
-/* 合并 source 的键到 target，ucode 没有 Object.assign */
-function mergeObject(target, source) {
-	if (type(source) !== 'object')
-		return target;
-	for (let k in source)
-		target[k] = source[k];
-	return target;
 }
 
 function formatErrors() {
@@ -76,7 +89,7 @@ const ubus = connect();
 /* const features = ubus.call('luci.homeproxy', 'singbox_get_features') || {}; */
 
 /* UCI config start */
-const uci = cursor();
+const uci = TEST_ROOT ? cursor(TEST_ROOT + '/etc/config') : cursor();
 
 const uciconfig = 'homeproxy';
 uci.load(uciconfig);
@@ -98,8 +111,16 @@ const uciruleset = 'ruleset';
 
 const routing_mode = uci.get(uciconfig, ucimain, 'routing_mode') || 'bypass_mainland_china';
 const routing_target_max_depth = 20;
+const routing_target_ctx = {
+	uci: uci,
+	config: uciconfig,
+	node_type: ucinode,
+	tag_map: build_outbound_tag_map(uci),
+	max_depth: routing_target_max_depth,
+	reportError: reportError
+};
 
-let wan_dns = ubus.call('network.interface', 'status', {'interface': 'wan'})?.['dns-server']?.[0];
+let wan_dns = TEST_ROOT ? null : ubus.call('network.interface', 'status', {'interface': 'wan'})?.['dns-server']?.[0];
 if (!wan_dns)
 	wan_dns = (routing_mode in ['proxy_mainland_china', 'global']) ? '8.8.8.8' : '223.5.5.5';
 
@@ -115,6 +136,20 @@ let main_node, main_udp_node, dedicated_udp_node, default_outbound, default_outb
     dns_client_subnet, cache_file_store_rdrc, cache_file_rdrc_timeout, direct_domain_list,
     proxy_domain_list;
 
+/* Routing / DNS advanced settings may still be in use when非 custom模式下 main_node 为空 */
+default_outbound = uci.get(uciconfig, uciroutingsetting, 'default_outbound') || 'nil';
+default_outbound_dns = uci.get(uciconfig, uciroutingsetting, 'default_outbound_dns') || 'default-dns';
+domain_strategy = uci.get(uciconfig, uciroutingsetting, 'domain_strategy');
+dns_default_strategy = uci.get(uciconfig, ucidnssetting, 'default_strategy') ||
+	uci.get(uciconfig, ucidnssetting, 'dns_strategy');
+dns_default_server = uci.get(uciconfig, ucidnssetting, 'default_server') || 'default-dns';
+dns_disable_cache = uci.get(uciconfig, ucidnssetting, 'disable_cache');
+dns_disable_cache_expire = uci.get(uciconfig, ucidnssetting, 'disable_cache_expire');
+dns_independent_cache = uci.get(uciconfig, ucidnssetting, 'independent_cache');
+dns_client_subnet = uci.get(uciconfig, ucidnssetting, 'client_subnet');
+cache_file_store_rdrc = uci.get(uciconfig, ucidnssetting, 'cache_file_store_rdrc');
+cache_file_rdrc_timeout = uci.get(uciconfig, ucidnssetting, 'cache_file_rdrc_timeout');
+
 if (routing_mode !== 'custom') {
 	main_node = uci.get(uciconfig, ucimain, 'main_node') || 'nil';
 	main_udp_node = uci.get(uciconfig, ucimain, 'main_udp_node') || 'nil';
@@ -129,7 +164,8 @@ if (routing_mode !== 'custom') {
 		if (isEmpty(china_dns_server) || type(china_dns_server) !== 'string' || china_dns_server === 'wan')
 			china_dns_server = wan_dns;
 	}
-	dns_default_strategy = (ipv6_support !== '1') ? 'ipv4_only' : null;
+	if (!isEmpty(main_node))
+		dns_default_strategy = (ipv6_support !== '1') ? 'ipv4_only' : null;
 
 	direct_domain_list = trim(readfile(HP_DIR + '/resources/direct_list.txt'));
 	if (direct_domain_list)
@@ -139,24 +175,13 @@ if (routing_mode !== 'custom') {
 	if (proxy_domain_list)
 		proxy_domain_list = split(proxy_domain_list, /[\r\n]/);
 
-	sniff_override = uci.get(uciconfig, uciinfra, 'sniff_override') || '1';
+	sniff_override = uci.get(uciconfig, uciinfra, 'sniff_override') ||
+		uci.get(uciconfig, uciroutingsetting, 'sniff_override') || '1';
 } else {
-	/* DNS settings */
-	dns_default_strategy = uci.get(uciconfig, ucidnssetting, 'default_strategy');
-	dns_default_server = uci.get(uciconfig, ucidnssetting, 'default_server');
-	dns_disable_cache = uci.get(uciconfig, ucidnssetting, 'disable_cache');
-	dns_disable_cache_expire = uci.get(uciconfig, ucidnssetting, 'disable_cache_expire');
-	dns_independent_cache = uci.get(uciconfig, ucidnssetting, 'independent_cache');
-	dns_client_subnet = uci.get(uciconfig, ucidnssetting, 'client_subnet');
-	cache_file_store_rdrc = uci.get(uciconfig, ucidnssetting, 'cache_file_store_rdrc'),
-	cache_file_rdrc_timeout = uci.get(uciconfig, ucidnssetting, 'cache_file_rdrc_timeout');
-
-	/* Routing settings */
-	default_outbound = uci.get(uciconfig, uciroutingsetting, 'default_outbound') || 'nil';
-	default_outbound_dns = uci.get(uciconfig, uciroutingsetting, 'default_outbound_dns') || 'default-dns';
-	domain_strategy = uci.get(uciconfig, uciroutingsetting, 'domain_strategy');
 	sniff_override = uci.get(uciconfig, uciroutingsetting, 'sniff_override');
 }
+
+const use_default_outbound_routing = isEmpty(main_node) && !isEmpty(default_outbound);
 
 const proxy_mode = uci.get(uciconfig, ucimain, 'proxy_mode') || 'redirect_tproxy',
       default_interface = uci.get(uciconfig, ucicontrol, 'bind_interface');
@@ -177,7 +202,7 @@ if (match(proxy_mode, /redirect/)) {
 	redirect_port = uci.get(uciconfig, 'infra', 'redirect_port') || '5331';
 }
 if (match(proxy_mode, /tproxy/))
-	if (main_udp_node !== 'nil' || routing_mode === 'custom')
+	if (main_udp_node !== 'nil' || routing_mode === 'custom' || use_default_outbound_routing)
 		tproxy_port = uci.get(uciconfig, 'infra', 'tproxy_port') || '5332';
 if (match(proxy_mode, /tun/)) {
 	tun_name = uci.get(uciconfig, uciinfra, 'tun_name') || 'singtun0';
@@ -243,13 +268,36 @@ function parse_dnsquery(strquery) {
 
 }
 
-function generate_endpoint(node) {
+function section_outbound_tag(section) {
+	return get_fallback_outbound_tag(section);
+}
+
+function node_outbound_tag(node_or_section) {
+	let section = (type(node_or_section) === 'object') ? node_or_section['.name'] : node_or_section;
+	return section_outbound_tag(section);
+}
+
+function runtime_outbound_tag(node_or_section) {
+	let section = (type(node_or_section) === 'object') ? node_or_section['.name'] : node_or_section;
+	return get_outbound_tag(routing_target_ctx.tag_map, section);
+}
+
+function runtime_shadowtls_tag(node_or_section) {
+	let section = (type(node_or_section) === 'object') ? node_or_section['.name'] : node_or_section;
+	return get_shadowtls_outbound_tag(routing_target_ctx.tag_map, section);
+}
+
+function map_outbound_tags(node_ids) {
+	return map(node_ids, (node_id) => node_outbound_tag(node_id));
+}
+
+function generate_endpoint(node, tag) {
 	if (type(node) !== 'object' || isEmpty(node))
 		return null;
 
 	const endpoint = {
 		type: node.type,
-		tag: 'cfg-' + node['.name'] + '-out',
+		tag: tag || node_outbound_tag(node),
 		address: node.wireguard_local_address,
 		mtu: strToInt(node.wireguard_mtu),
 		private_key: node.wireguard_private_key,
@@ -276,9 +324,33 @@ function generate_endpoint(node) {
 	return endpoint;
 }
 
-function generate_hysteria_options(node) {
-	return {
+function generate_outbound(node, tag) {
+	if (type(node) !== 'object' || isEmpty(node))
+		return null;
+
+	const outbound = {
+		type: node.type,
+		tag: tag || node_outbound_tag(node),
+		routing_mark: strToInt(self_mark),
+
+		server: node.address,
+		server_port: strToInt(node.port),
+		/* Hysteria(2) */
 		server_ports: node.hysteria_hopping_port,
+
+		username: (node.type !== 'ssh') ? node.username : null,
+		user: (node.type === 'ssh') ? node.username : null,
+		password: node.password,
+
+		/* Direct */
+		override_address: node.override_address,
+		override_port: strToInt(node.override_port),
+		proxy_protocol: strToInt(node.proxy_protocol),
+		/* AnyTLS */
+		idle_session_check_interval: strToTime(node.anytls_idle_session_check_interval),
+		idle_session_timeout: strToTime(node.anytls_idle_session_timeout),
+		min_idle_session: strToInt(node.anytls_min_idle_session),
+		/* Hysteria (2) */
 		hop_interval: strToTime(node.hysteria_hop_interval),
 		up_mbps: strToInt(node.hysteria_up_mbps),
 		down_mbps: strToInt(node.hysteria_down_mbps),
@@ -290,108 +362,27 @@ function generate_hysteria_options(node) {
 		auth_str: (node.hysteria_auth_type === 'string') ? node.hysteria_auth_payload : null,
 		recv_window_conn: strToInt(node.hysteria_recv_window_conn),
 		recv_window: strToInt(node.hysteria_revc_window),
-		disable_mtu_discovery: strToBool(node.hysteria_disable_mtu_discovery)
-	};
-}
-
-function generate_shadowsocks_options(node) {
-	return {
+		disable_mtu_discovery: strToBool(node.hysteria_disable_mtu_discovery),
+		/* Shadowsocks */
 		method: node.shadowsocks_encrypt_method,
 		plugin: node.shadowsocks_plugin,
-		plugin_opts: node.shadowsocks_plugin_opts
-	};
-}
-
-function generate_tls_options(node) {
-	if (node.tls !== '1')
-		return null;
-
-	return {
-		enabled: true,
-		server_name: node.tls_sni,
-		insecure: strToBool(node.tls_insecure),
-		alpn: node.tls_alpn,
-		min_version: node.tls_min_version,
-		max_version: node.tls_max_version,
-		cipher_suites: node.tls_cipher_suites,
-		certificate_path: node.tls_cert_path,
-		ech: (node.tls_ech === '1') ? {
-			enabled: true,
-			config: node.tls_ech_config,
-			config_path: node.tls_ech_config_path
-		} : null,
-		utls: !isEmpty(node.tls_utls) ? {
-			enabled: true,
-			fingerprint: node.tls_utls
-		} : null,
-		reality: (node.tls_reality === '1') ? {
-			enabled: true,
-			public_key: node.tls_reality_public_key,
-			short_id: node.tls_reality_short_id
-		} : null
-	};
-}
-
-function generate_transport_options(node) {
-	if (isEmpty(node.transport))
-		return null;
-
-	return {
-		type: node.transport,
-		host: node.http_host || node.httpupgrade_host,
-		path: node.http_path || node.ws_path,
-		headers: node.ws_host ? { Host: node.ws_host } : null,
-		method: node.http_method,
-		max_early_data: strToInt(node.websocket_early_data),
-		early_data_header_name: node.websocket_early_data_header,
-		service_name: node.grpc_servicename,
-		idle_timeout: strToTime(node.http_idle_timeout),
-		ping_timeout: strToTime(node.http_ping_timeout),
-		permit_without_stream: strToBool(node.grpc_permit_without_stream)
-	};
-}
-
-function generate_outbound(node) {
-	if (type(node) !== 'object' || isEmpty(node))
-		return null;
-
-	const outbound = {
-		type: node.type,
-		tag: 'cfg-' + node['.name'] + '-out',
-		routing_mark: strToInt(self_mark),
-		server: node.address,
-		server_port: strToInt(node.port),
-		username: (node.type !== 'ssh') ? node.username : null,
-		user: (node.type === 'ssh') ? node.username : null,
-		password: node.password
-	};
-
-	// Protocol-specific options
-	if (node.type in ['hysteria', 'hysteria2'])
-		mergeObject(outbound, generate_hysteria_options(node));
-	else if (node.type === 'shadowsocks')
-		mergeObject(outbound, generate_shadowsocks_options(node));
-
-	// Common options
-	mergeObject(outbound, {
-		override_address: node.override_address,
-		override_port: strToInt(node.override_port),
-		proxy_protocol: strToInt(node.proxy_protocol),
-		idle_session_check_interval: strToTime(node.anytls_idle_session_check_interval),
-		idle_session_timeout: strToTime(node.anytls_idle_session_timeout),
-		min_idle_session: strToInt(node.anytls_min_idle_session),
+		plugin_opts: node.shadowsocks_plugin_opts,
+		/* ShadowTLS / Socks */
 		version: (node.type === 'shadowtls') ? strToInt(node.shadowtls_version) : ((node.type === 'socks') ? node.socks_version : null),
+		/* SSH */
 		client_version: node.ssh_client_version,
 		host_key: node.ssh_host_key,
 		host_key_algorithms: node.ssh_host_key_algo,
 		private_key: node.ssh_priv_key,
 		private_key_passphrase: node.ssh_priv_key_pp,
+		/* Tuic */
 		uuid: node.uuid,
 		congestion_control: node.tuic_congestion_control,
 		udp_relay_mode: node.tuic_udp_relay_mode,
 		udp_over_stream: strToBool(node.tuic_udp_over_stream),
 		zero_rtt_handshake: strToBool(node.tuic_enable_zero_rtt),
 		heartbeat: strToTime(node.tuic_heartbeat),
+		/* VLESS / VMess */
 		flow: node.vless_flow,
 		alter_id: strToInt(node.vmess_alterid),
 		security: node.vmess_encrypt,
@@ -411,8 +402,45 @@ function generate_outbound(node) {
 				down_mbps: strToInt(node.multiplex_brutal_down)
 			} : null
 		} : null,
-		tls: generate_tls_options(node),
-		transport: generate_transport_options(node),
+		tls: (node.tls === '1') ? {
+			enabled: true,
+			server_name: node.tls_sni,
+			insecure: strToBool(node.tls_insecure),
+			alpn: node.tls_alpn,
+			min_version: node.tls_min_version,
+			max_version: node.tls_max_version,
+			cipher_suites: node.tls_cipher_suites,
+			certificate_path: node.tls_cert_path,
+			ech: (node.tls_ech === '1') ? {
+				enabled: true,
+				config: node.tls_ech_config,
+				config_path: node.tls_ech_config_path
+			} : null,
+			utls: !isEmpty(node.tls_utls) ? {
+				enabled: true,
+				fingerprint: node.tls_utls
+			} : null,
+			reality: (node.tls_reality === '1') ? {
+				enabled: true,
+				public_key: node.tls_reality_public_key,
+				short_id: node.tls_reality_short_id
+			} : null
+		} : null,
+		transport: !isEmpty(node.transport) ? {
+			type: node.transport,
+			host: node.http_host || node.httpupgrade_host,
+			path: node.http_path || node.ws_path,
+			headers: node.ws_host ? {
+				Host: node.ws_host
+			} : null,
+			method: node.http_method,
+			max_early_data: strToInt(node.websocket_early_data),
+			early_data_header_name: node.websocket_early_data_header,
+			service_name: node.grpc_servicename,
+			idle_timeout: strToTime(node.http_idle_timeout),
+			ping_timeout: strToTime(node.http_ping_timeout),
+			permit_without_stream: strToBool(node.grpc_permit_without_stream)
+		} : null,
 		udp_over_tcp: (node.udp_over_tcp === '1') ? {
 			enabled: true,
 			version: strToInt(node.udp_over_tcp_version)
@@ -420,7 +448,7 @@ function generate_outbound(node) {
 		tcp_fast_open: strToBool(node.tcp_fast_open),
 		tcp_multi_path: strToBool(node.tcp_multi_path),
 		udp_fragment: strToBool(node.udp_fragment)
-	});
+	};
 
 	return outbound;
 }
@@ -471,13 +499,14 @@ function push_node_outbound(client_config, node, tag, routing_cfg) {
 		return;
 
 	if (node.type === 'wireguard') {
-		push(client_config.endpoints, generate_endpoint(node));
-		client_config.endpoints[length(client_config.endpoints)-1].tag = tag;
+		push(client_config.endpoints, generate_endpoint(node, tag));
 		apply_routing_node_options(client_config.endpoints[length(client_config.endpoints)-1], routing_cfg);
 	} else {
-		let outbound = generate_outbound(node);
+		let outbound = generate_outbound(node, tag);
 		if (has_shadowtls_detour(node)) {
-			const shadowtls_tag = tag + '-shadowtls';
+			const shadowtls_tag = (tag === node_outbound_tag(node))
+				? runtime_shadowtls_tag(node)
+				: tag + '-shadowtls';
 			let shadowtls_outbound = generate_shadowtls_outbound(node, shadowtls_tag);
 			apply_routing_node_options(shadowtls_outbound, routing_cfg);
 			outbound.detour = shadowtls_tag;
@@ -486,7 +515,6 @@ function push_node_outbound(client_config, node, tag, routing_cfg) {
 			apply_routing_node_options(outbound, routing_cfg);
 		}
 		push(client_config.outbounds, outbound);
-		client_config.outbounds[length(client_config.outbounds)-1].tag = tag;
 	}
 }
 
@@ -498,222 +526,92 @@ function push_block_outbound(client_config, tag) {
 }
 
 function is_builtin_outbound(target) {
-	return target in ['block-out', 'direct-out'];
+	return routingTarget.is_builtin_outbound(routing_target_ctx, target);
 }
 
 function is_node_section(target) {
-	const node = uci.get_all(uciconfig, target) || {};
-
-	return node['.type'] === ucinode;
-}
-
-function append_unique_node(nodes, node_id) {
-	if (!isEmpty(node_id) && !~index(nodes, node_id))
-		push(nodes, node_id);
+	return routingTarget.is_node_section(routing_target_ctx, target);
 }
 
 function is_routing_node_section(target) {
-	const node = uci.get(uciconfig, target, 'node');
-
-	return !isEmpty(node);
-}
-
-function normalize_outbound_target(target) {
-	const match_target = match(target || '', /^cfg-(.+)-out$/);
-
-	return match_target ? match_target[1] : target;
-}
-
-function append_existing_node(nodes, node_id, owner, allow_routing_node) {
-	if (isEmpty(node_id))
-		return;
-
-	if (is_node_section(node_id) ||
-	    (allow_routing_node && (is_builtin_outbound(node_id) || is_routing_node_section(node_id)))) {
-		append_unique_node(nodes, node_id);
-	} else {
-		reportError('warning',
-			sprintf('节点组 %s 引用了已删除的节点：%s，已在本次生成中跳过。', owner, node_id),
-			'请进入 LuCI 界面检查对应的节点列表引用');
-	}
+	return routingTarget.is_routing_node_section(routing_target_ctx, target);
 }
 
 function expand_node_filter(manual_nodes, node_filter, node_filter_exclude, owner, allow_routing_node) {
-	let nodes = [];
+	let result = expandNodeFilterHelper({
+		uci: uci,
+		config: uciconfig,
+		node_type: ucinode,
+		allow_manual_node: (node_id) => {
+			if (is_node_section(node_id) ||
+			    (allow_routing_node && (is_builtin_outbound(node_id) || is_routing_node_section(node_id))))
+				return true;
 
-	if (type(manual_nodes) === 'array')
-		for (let i in manual_nodes)
-			append_existing_node(nodes, i, owner, allow_routing_node);
-	else
-		append_existing_node(nodes, manual_nodes, owner, allow_routing_node);
+			return false;
+		},
+		on_invalid_manual_node: (node_id) => {
+			reportError('warning',
+				sprintf('节点组 %s 引用了已删除的节点：%s，已在本次生成中跳过。', owner, node_id),
+				'请进入 LuCI 界面检查对应的节点列表引用');
+		}
+	}, manual_nodes, node_filter, node_filter_exclude);
 
-	/* 包含正则：纳入标签命中的代理节点 */
-	if (!isEmpty(node_filter)) {
-		let pattern;
-		try {
-			pattern = regexp(node_filter);
-		} catch(e) {
+	if (!result.result) {
+		if (!isEmpty(node_filter) && !isEmpty(node_filter_exclude)) {
 			reportError('error',
-				sprintf('路由节点 %s 的节点正则无效：%s', owner, e.message || e),
+				sprintf('路由节点 %s 的节点正则或排除正则无效：%s', owner, result.error),
+				'请修正节点正则/排除正则，或清空该字段后重新生成配置');
+		} else if (!isEmpty(node_filter)) {
+			reportError('error',
+				sprintf('路由节点 %s 的节点正则无效：%s', owner, result.error),
 				'请修正节点正则，或清空该字段后重新生成配置');
-			pattern = null;
-		}
-
-		if (pattern)
-			uci.foreach(uciconfig, ucinode, (cfg) => {
-				const label = cfg.label || cfg['.name'];
-				if (match(label, pattern))
-					append_unique_node(nodes, cfg['.name']);
-			});
-	}
-
-	/* 排除正则：从已纳入（含手动选择）的节点中剔除标签命中的代理节点 */
-	if (!isEmpty(node_filter_exclude)) {
-		let exclude_pattern;
-		try {
-			exclude_pattern = regexp(node_filter_exclude);
-		} catch(e) {
+		} else {
 			reportError('error',
-				sprintf('路由节点 %s 的排除正则无效：%s', owner, e.message || e),
+				sprintf('路由节点 %s 的排除正则无效：%s', owner, result.error),
 				'请修正排除正则，或清空该字段后重新生成配置');
-			exclude_pattern = null;
 		}
 
-		if (exclude_pattern) {
-			let exclude_ids = {};
-			uci.foreach(uciconfig, ucinode, (cfg) => {
-				const label = cfg.label || cfg['.name'];
-				if (match(label, exclude_pattern))
-					exclude_ids[cfg['.name']] = true;
-			});
-			nodes = filter(nodes, (node_id) => !exclude_ids[node_id]);
-		}
+		return [];
 	}
 
-	return nodes;
+	if (result.truncated)
+		reportError('warning',
+			sprintf('路由节点 %s 的节点正则命中超过 %d 个节点，已截断结果。', owner, result.max_result_nodes),
+			'请收窄节点正则或拆分路由节点，避免一次生成过大的 outbound 组');
+
+	if (result.scan_truncated)
+		reportError('warning',
+			sprintf('路由节点 %s 的节点正则扫描超过 %d 个节点，已停止继续匹配。', owner, result.max_scan_nodes),
+			'请收窄订阅节点规模或正则范围，避免生成器长时间执行复杂匹配');
+
+	return result.nodes || [];
 }
 
 function resolve_outbound_target(target, owner, seen_path) {
-	target = normalize_outbound_target(target);
-
-	if (isEmpty(target))
-		return null;
-	else if (is_builtin_outbound(target))
-		return {
-			type: 'builtin',
-			outbound: target,
-			target: target
-		};
-	else if (is_node_section(target))
-		return {
-			type: 'node',
-			outbound: 'cfg-' + target + '-out',
-			target: target,
-			node_id: target
-		};
-
-	if (!seen_path)
-		seen_path = [];
-
-	if (~index(seen_path, target)) {
-		reportError('error',
-			sprintf('路由节点配置错误：检测到循环引用\n循环路径: %s',
-				join(' -> ', [ ...seen_path, target ])),
-			'进入 LuCI 界面 -> 服务 -> HomeProxy -> 路由节点，检查以下节点的"出站"配置，移除循环引用');
-		return { fatal: true };
-	}
-
-	if (length(seen_path) >= routing_target_max_depth) {
-		reportError('error',
-			sprintf('路由节点配置错误：嵌套层级过深\n当前路径: %s\n最大允许层级: %d',
-				join(' -> ', [ ...seen_path, target ]),
-				routing_target_max_depth),
-			'简化路由节点的嵌套结构，避免过多的 Selector 嵌套');
-		return { fatal: true };
-	}
-
-	const routing_node = uci.get(uciconfig, target, 'node');
-	if (isEmpty(routing_node)) {
-		if (owner)
-			reportError('warning',
-				sprintf('%s 引用了已删除或无效的节点：%s，已在本次生成中跳过。', owner, join(' -> ', [ ...seen_path, target ])),
-				'请进入 LuCI 界面检查对应的节点或路由节点引用');
-
-		return null;
-	} else if (routing_node === 'urltest' || routing_node === 'selector') {
-		return {
-			type: routing_node,
-			outbound: 'cfg-' + target + '-out',
-			target: target,
-			section_id: target
-		};
-	}
-
-	return resolve_outbound_target(routing_node, owner, [ ...seen_path, target ]);
+	return routingTarget.resolve_outbound_target(routing_target_ctx, target, owner, seen_path);
 }
 
 function get_routing_target_outbound(target, owner) {
-	const resolved = resolve_outbound_target(target, owner, []);
-
-	if (!resolved || resolved.fatal)
-		return null;
-
-	return resolved.outbound;
+	return routingTarget.get_routing_target_outbound(routing_target_ctx, target, owner);
 }
 
 function push_routing_target_outbound(client_config, target, routing_nodes) {
-	const resolved = resolve_outbound_target(target, null, []);
-
-	if (!resolved || resolved.fatal || resolved.type !== 'node' || ~index(routing_nodes, resolved.node_id))
-		return;
-
-	const node = uci.get_all(uciconfig, resolved.node_id) || {};
-	push_node_outbound(client_config, node, 'cfg-' + resolved.node_id + '-out');
-	push(routing_nodes, resolved.node_id);
+	return routingTarget.collect_routing_target_dependencies(
+		routing_target_ctx,
+		client_config,
+		target,
+		routing_nodes,
+		push_node_outbound,
+		node_outbound_tag
+	);
 }
 
 function get_valid_selector_outbounds(selector_nodes, owner) {
-	let outbounds = [];
-
-	for (let node_id in selector_nodes) {
-		const outbound = get_routing_target_outbound(node_id, sprintf('路由节点 %s 的 Selector 节点', owner));
-		if (!isEmpty(outbound))
-			push(outbounds, outbound);
-	}
-
-	return outbounds;
+	return routingTarget.get_valid_selector_outbounds(routing_target_ctx, selector_nodes, owner);
 }
 
 function get_outbound(cfg, fallback, owner) {
-	if (isEmpty(cfg))
-		return null;
-
-	if (type(cfg) === 'array') {
-		if ('any-out' in cfg)
-			return 'any';
-
-		let outbounds = [];
-		for (let i in cfg)
-			push(outbounds, get_outbound(i, fallback, owner));
-		return outbounds;
-	} else {
-		switch (cfg) {
-		case 'block-out':
-		case 'direct-out':
-			return cfg;
-		default:
-			const resolved = resolve_outbound_target(cfg, owner, []);
-
-			if (!resolved || resolved.fatal) {
-				reportError('warning',
-					sprintf('%s引用了已删除或无效的节点：%s，已在本次生成中回退为 %s。', owner ? owner + ' ' : '出站', cfg, fallback || '空值'),
-					'请进入 LuCI 界面检查路由、DNS、规则集中的出站引用');
-				return fallback || null;
-			}
-
-			return resolved.outbound;
-		}
-	}
+	return routingTarget.get_outbound(routing_target_ctx, cfg, fallback, owner);
 }
 
 function get_resolver(cfg) {
@@ -739,66 +637,16 @@ function get_ruleset(cfg) {
 	return rules;
 }
 
-function rename_tags(value, rename) {
-	let t = type(value);
-
-	if (t === 'object') {
-		for (let k in value)
-			value[k] = rename_tags(value[k], rename);
-		return value;
-	}
-
-	if (t === 'array') {
-		for (let i = 0; i < length(value); i++)
-			value[i] = rename_tags(value[i], rename);
-		return value;
-	}
-
-	if (t === 'string')
-		return (value in rename) ? rename[value] : value;
-
-	return value;
-}
-
 function apply_outbound_tag_rename(client_config) {
-	let tag_map = build_outbound_tag_map(uci),
-	    rename = {};
-
-	for (let section in tag_map) {
-		let old_tag = 'cfg-' + section + '-out',
-		    final_tag = tag_map[section];
-
-		rename[old_tag] = final_tag;
-		rename[old_tag + '-shadowtls'] = final_tag + '-out-shadowtls';
-	}
-
-	rename_tags(client_config, rename);
+	return applyOutboundTagRenameHelper(client_config, routing_target_ctx.tag_map);
 }
 
 function assert_unique_outbound_tags(client_config) {
-	let seen = {};
-
-	for (let outbound in (client_config.outbounds || [])) {
-		let tag = (type(outbound) === 'object') ? outbound.tag : null;
-		if (tag === null)
-			continue;
-		if (seen[tag])
-			reportError('error',
-				sprintf('rename 后出现重复 outbound tag: %s', tag),
-				'通常意味着去重算法异常；请附带节点 label / section 列表反馈');
-		seen[tag] = true;
-	}
-
-	for (let endpoint in (client_config.endpoints || [])) {
-		let tag = (type(endpoint) === 'object') ? endpoint.tag : null;
-		if (tag === null)
-			continue;
-		if (seen[tag])
-			reportError('error',
-				sprintf('rename 后出现重复 outbound tag: %s', tag),
-				'通常意味着去重算法异常；请附带节点 label / section 列表反馈');
-		seen[tag] = true;
-	}
+	return assertUniqueOutboundTagsHelper(client_config, (tag) => {
+		reportError('error',
+			sprintf('rename 后出现重复 outbound tag: %s', tag),
+			'通常意味着去重算法异常；请附带节点 label / section 列表反馈');
+	});
 }
 /* Config helper end */
 
@@ -1028,7 +876,7 @@ if (match(proxy_mode, /redirect/))
 		sniff: true,
 		sniff_override_destination: strToBool(sniff_override)
 	});
-if (match(proxy_mode, /tproxy/))
+if (match(proxy_mode, /tproxy/) && !isEmpty(tproxy_port))
 	push(config.inbounds, {
 		type: 'tproxy',
 		tag: 'tproxy-in',
@@ -1091,7 +939,7 @@ if (!isEmpty(main_node)) {
 			push(config.outbounds, {
 				type: 'urltest',
 				tag: 'main-out',
-				outbounds: map(main_urltest_nodes, (k) => `cfg-${k}-out`),
+				outbounds: map_outbound_tags(main_urltest_nodes),
 				interval: strToTime(main_urltest_interval),
 				tolerance: strToInt(main_urltest_tolerance),
 				idle_timeout: (strToInt(main_urltest_interval) > 1800) ? `${main_urltest_interval * 2}s` : null,
@@ -1129,7 +977,7 @@ if (!isEmpty(main_node)) {
 			push(config.outbounds, {
 				type: 'urltest',
 				tag: 'main-udp-out',
-				outbounds: map(main_udp_urltest_nodes, (k) => `cfg-${k}-out`),
+				outbounds: map_outbound_tags(main_udp_urltest_nodes),
 				interval: strToTime(main_udp_urltest_interval),
 				tolerance: strToInt(main_udp_urltest_tolerance),
 				idle_timeout: (strToInt(main_udp_urltest_interval) > 1800) ? `${main_udp_urltest_interval * 2}s` : null,
@@ -1155,7 +1003,7 @@ if (!isEmpty(main_node)) {
 
 	for (let i in urltest_nodes) {
 		const urltest_node = uci.get_all(uciconfig, i) || {};
-		push_node_outbound(config, urltest_node, 'cfg-' + i + '-out');
+		push_node_outbound(config, urltest_node, node_outbound_tag(i));
 	}
 } else if (!isEmpty(default_outbound)) {
 	let group_nodes = [],
@@ -1172,14 +1020,14 @@ if (!isEmpty(main_node)) {
 				reportError('warning',
 					sprintf('路由节点 %s 没有可用节点，已在本次生成中临时回退为阻断出站。', owner),
 					'请手动选择节点，或调整节点正则/排除正则以命中可用节点');
-				push_block_outbound(config, 'cfg-' + cfg['.name'] + '-out');
+				push_block_outbound(config, node_outbound_tag(cfg));
 				return;
 			}
 
 			push(config.outbounds, {
 				type: 'urltest',
-				tag: 'cfg-' + cfg['.name'] + '-out',
-				outbounds: map(urltest_nodes, (k) => `cfg-${k}-out`),
+				tag: node_outbound_tag(cfg),
+				outbounds: map_outbound_tags(urltest_nodes),
 				url: cfg.urltest_url,
 				interval: strToTime(cfg.urltest_interval),
 				tolerance: strToInt(cfg.urltest_tolerance),
@@ -1195,7 +1043,7 @@ if (!isEmpty(main_node)) {
 				reportError('warning',
 					sprintf('路由节点 %s 没有可用节点，已在本次生成中临时回退为阻断出站。', owner),
 					'请手动选择节点，或调整节点正则/排除正则以命中可用节点');
-				push_block_outbound(config, 'cfg-' + cfg['.name'] + '-out');
+				push_block_outbound(config, node_outbound_tag(cfg));
 				return;
 			}
 
@@ -1207,7 +1055,7 @@ if (!isEmpty(main_node)) {
 
 			push(config.outbounds, {
 				type: 'selector',
-				tag: 'cfg-' + cfg['.name'] + '-out',
+				tag: node_outbound_tag(cfg),
 				outbounds: selector_outbounds,
 				default: selector_default,
 				interrupt_exist_connections: strToBool(cfg.selector_interrupt_exist_connections)
@@ -1223,12 +1071,12 @@ if (!isEmpty(main_node)) {
 				reportError('warning',
 					sprintf('路由节点 %s 的节点引用已失效，已在本次生成中临时回退为阻断出站。', cfg.label || cfg['.name']),
 					'请进入 LuCI 界面 -> 服务 -> HomeProxy -> 路由节点，重新选择有效节点');
-				push_block_outbound(config, 'cfg-' + cfg['.name'] + '-out');
+				push_block_outbound(config, node_outbound_tag(cfg));
 				return;
 			}
 
 			const outbound = uci.get_all(uciconfig, resolved.node_id) || {};
-			push_node_outbound(config, outbound, 'cfg-' + resolved.node_id + '-out', cfg);
+			push_node_outbound(config, outbound, node_outbound_tag(resolved.node_id), cfg);
 			push(routing_nodes, resolved.node_id);
 		}
 	});

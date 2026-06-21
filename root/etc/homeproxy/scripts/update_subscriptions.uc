@@ -8,7 +8,7 @@
 'use strict';
 
 import { md5 } from 'digest';
-import { open } from 'fs';
+import { open, writefile } from 'fs';
 import { connect } from 'ubus';
 import { cursor } from 'uci';
 
@@ -17,7 +17,7 @@ import { init_action } from 'luci.sys';
 import { remove_subscription_nodes } from '/etc/homeproxy/scripts/node_references.uc';
 
 import {
-	wGET, decodeBase64Str, getTime, isEmpty, parseURL,
+	wGETResult, decodeBase64Str, getTime, isEmpty, parseURL,
 	validation, HP_DIR, RUN_DIR
 } from 'homeproxy';
 
@@ -32,6 +32,7 @@ const ucimain = 'config',
       ucisubscription = 'subscription';
 
 const allow_insecure = uci.get(uciconfig, ucisubscription, 'allow_insecure') || '0',
+      allow_unsupported_tls_pin_fallback = uci.get(uciconfig, ucisubscription, 'allow_unsupported_tls_pin_fallback') || '0',
       filter_mode = uci.get(uciconfig, ucisubscription, 'filter_nodes') || 'disabled',
       filter_keywords = uci.get(uciconfig, ucisubscription, 'filter_keywords') || [],
       packet_encoding = uci.get(uciconfig, ucisubscription, 'packet_encoding') || 'xudp',
@@ -73,12 +74,58 @@ const ubus = connect();
 const sing_features = ubus.call('luci.homeproxy', 'singbox_get_features', {}) || {};
 /* Common var end */
 
+const SUBSCRIPTION_DIAGNOSTICS_PATH = RUN_DIR + '/subscription-diagnostics.json';
+const SUBSCRIPTION_UPDATE_STATUS_PATH = RUN_DIR + '/subscription-update-status.json';
+let subscription_diagnostics = [];
+
 /* Log */
 system(`mkdir -p ${RUN_DIR}`);
 function log(...args) {
 	const logfile = open(`${RUN_DIR}/homeproxy.log`, 'a');
 	logfile.write(`${getTime()} [SUBSCRIBE] ${join(' ', args)}\n`);
 	logfile.close();
+}
+
+function reportSubscriptionDiagnostic(type, message, suggestion) {
+	push(subscription_diagnostics, {
+		type,
+		source: 'subscription',
+		message,
+		suggestion
+	});
+}
+
+function writeSubscriptionDiagnostics() {
+	system(`mkdir -p ${RUN_DIR}`);
+
+	if (length(subscription_diagnostics)) {
+		writefile(SUBSCRIPTION_DIAGNOSTICS_PATH, sprintf('%.J\n', {
+			time: time(),
+			items: subscription_diagnostics
+		}));
+	} else {
+		system(`rm -f ${SUBSCRIPTION_DIAGNOSTICS_PATH}`);
+	}
+}
+
+function writeSubscriptionUpdateStatus(running, completed, update_result, error) {
+	system(`mkdir -p ${RUN_DIR}`);
+	writefile(SUBSCRIPTION_UPDATE_STATUS_PATH, sprintf('%.J\n', {
+		time: time(),
+		running: !!running,
+		completed: !!completed,
+		update_result,
+		error: error || null
+	}));
+}
+
+function sanitizeCommandError(text) {
+	text = trim(text || '');
+	if (isEmpty(text))
+		return null;
+
+	text = split(text, '\n')[0] || text;
+	return text;
 }
 
 function uci_value_equal(a, b) {
@@ -136,17 +183,36 @@ function tls_cert_pin_unsupported() {
 	return !version_at_least(sing_features.version, 1, 13, 0);
 }
 
-function apply_tls_cert_pin_fallback(config, label, pin) {
+function apply_tls_cert_pin_policy(config, label, pin) {
 	if (!pin || !tls_cert_pin_unsupported())
 		return;
+
+	const node_label = label || config.label || 'NULL',
+	      version = sing_features.version || 'unknown';
 
 	if (config.tls_insecure === '1')
 		return;
 
-	config.tls_insecure = '1';
-	log(sprintf('Node %s uses server certificate fingerprint, but sing-box %s cannot express it; enabling TLS insecure fallback.',
-		label || config.label || 'NULL',
-		sing_features.version || 'unknown'));
+	if (allow_unsupported_tls_pin_fallback === '1' || config.type === 'hysteria2') {
+		config.tls_insecure = '1';
+		log(sprintf('Node %s uses server certificate fingerprint, but sing-box %s cannot express it; enabling explicit TLS insecure compatibility fallback.',
+			node_label,
+			version));
+		reportSubscriptionDiagnostic('warning',
+			sprintf('订阅节点 %s 使用证书指纹，但当前 sing-box %s 不支持 certificate_public_key_sha256；已降级为 TLS insecure 继续兼容。', node_label, version),
+			(config.type === 'hysteria2')
+				? '这是延续旧行为的兼容回退；如需更严格校验，请升级到支持 certificate_public_key_sha256 的 sing-box'
+				: '若安全要求较高，请关闭“Allow unsupported certificate pin fallback”，让此类节点默认跳过');
+		return;
+	}
+
+	config.__skip_reason = sprintf('该节点使用证书指纹，但当前 sing-box %s 不支持 certificate_public_key_sha256，已跳过。', version);
+	reportSubscriptionDiagnostic('warning',
+		sprintf('订阅节点 %s 使用证书指纹，但当前 sing-box %s 不支持 certificate_public_key_sha256，已跳过。', node_label, version),
+		'升级到支持 certificate_public_key_sha256 的 sing-box，或显式开启兼容 fallback 后重新更新订阅');
+	log(sprintf('Skipping node %s: server certificate fingerprint is unsupported by sing-box %s.',
+		node_label,
+		version));
 }
 
 function parse_uri(uri) {
@@ -259,7 +325,7 @@ function parse_uri(uri) {
 				tls_insecure: (params.insecure === '1') ? '1' : '0',
 				tls_sni: params.sni
 			};
-			apply_tls_cert_pin_fallback(config, config.label, params.pinSHA256);
+				apply_tls_cert_pin_policy(config, config.label, params.pinSHA256);
 
 			break;
 		case 'socks':
@@ -688,7 +754,7 @@ function parse_surge_proxy(line) {
 			tls_sni: opts.sni,
 			tls_insecure: opts['skip-cert-verify'] ? bval(opts['skip-cert-verify']) : '0'
 		};
-		apply_tls_cert_pin_fallback(config, label, opts['server-cert-fingerprint-sha256']);
+		apply_tls_cert_pin_policy(config, label, opts['server-cert-fingerprint-sha256']);
 		if (opts['port-hopping'])
 			/* Surge 的 "start-end[,start-end]" 需要转换为 sing-box server_ports
 			 * 使用的 "start:end"，sing-quic ParsePorts() 要求冒号格式。 */
@@ -768,19 +834,22 @@ function parse_surge_subscription(body) {
 }
 
 function main() {
-	if (via_proxy !== '1') {
-		log('Stopping service...');
-		init_action('homeproxy', 'stop');
-	}
-
 	for (let url in subscription_urls) {
 		url = replace(url, /#.*$/, '');
 		const groupHash = md5(url);
 		node_cache[groupHash] = {};
 
-		const res = wGET(url, user_agent);
+		const fetch_result = wGETResult(url, user_agent) || {},
+		      res = fetch_result.stdout;
 		if (isEmpty(res)) {
+			const reason = sanitizeCommandError(fetch_result.stderr);
+
 			log(sprintf('Failed to fetch resources from %s.', url));
+			if (!isEmpty(reason))
+				log(sprintf('Fetch stderr: %s', reason));
+			reportSubscriptionDiagnostic('error',
+				sprintf('订阅地址拉取失败：%s', url),
+				reason || '请检查路由器到订阅源的连通性、DNS 解析和 TLS 访问是否正常');
 			continue;
 		}
 
@@ -817,6 +886,10 @@ function main() {
 			}
 			if (isEmpty(config))
 				continue;
+			if (!isEmpty(config.__skip_reason)) {
+				log(sprintf('Skipping node %s: %s', config.label || 'NULL', config.__skip_reason));
+				continue;
+			}
 
 			const label = config.label;
 			config.label = null;
@@ -851,12 +924,13 @@ function main() {
 	}
 
 	if (isEmpty(node_result)) {
-		log('Failed to update subscriptions: no valid node found.');
+		let fetch_errors = filter(subscription_diagnostics, (item) => item?.type === 'error' && item?.source === 'subscription');
 
-		if (via_proxy !== '1') {
-			log('Starting service...');
-			init_action('homeproxy', 'start');
-		}
+		log('Failed to update subscriptions: no valid node found.');
+		if (!length(fetch_errors))
+			reportSubscriptionDiagnostic('error',
+				'订阅更新失败：没有找到可用节点。',
+				'请检查订阅地址、过滤规则，以及是否有节点因当前 sing-box 不支持证书指纹而被跳过');
 
 		return false;
 	}
@@ -1006,17 +1080,35 @@ function main() {
 
 	log(sprintf('%s nodes added, %s updated, %s removed.', added, updated, removed));
 	log('Successfully updated subscriptions.');
+
+	return true;
 }
 
-if (!isEmpty(subscription_urls))
+if (!isEmpty(subscription_urls)) {
+	writeSubscriptionUpdateStatus(true, false, null, null);
+
 	try {
-		call(main);
+		const ok = call(main);
+		writeSubscriptionUpdateStatus(false, true, ok === false ? false : true,
+			(ok === false) ? (subscription_diagnostics[0]?.message || '订阅更新失败。') : null);
 	} catch(e) {
+		const status_error = sprintf('订阅更新异常：%s: %s', e.type || 'error', e.message || e);
+
 		log('[FATAL ERROR] An error occurred during updating subscriptions:');
 		log(sprintf('%s: %s', e.type, e.message));
 		log(e.stacktrace[0].context);
+		reportSubscriptionDiagnostic('error',
+			status_error,
+			'请查看 HomeProxy 日志中的 [SUBSCRIBE] 记录并修复订阅配置');
 
 		log('Restarting service...');
 		init_action('homeproxy', 'stop');
 		init_action('homeproxy', 'start');
+		writeSubscriptionUpdateStatus(false, true, false, status_error);
 	}
+} else {
+	subscription_diagnostics = [];
+	writeSubscriptionUpdateStatus(false, true, false, '未配置订阅地址。');
+}
+
+writeSubscriptionDiagnostics();

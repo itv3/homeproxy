@@ -9,6 +9,15 @@
 
 import { access, error, lstat, popen, readfile, stat, writefile } from 'fs';
 import { cursor } from 'uci';
+import {
+	node_filter_compile,
+	expand_node_filter,
+	preview_manual_node_allowed
+} from '/etc/homeproxy/scripts/node_filter.uc';
+import {
+	collect_node_references,
+	remove_subscription_nodes
+} from '/etc/homeproxy/scripts/node_references.uc';
 
 /* Kanged from ucode/luci */
 function shellquote(s) {
@@ -22,6 +31,10 @@ function hasKernelModule(kmod) {
 const HP_DIR = '/etc/homeproxy';
 const RUN_DIR = '/var/run/homeproxy';
 const CONFIG_DIAGNOSTICS = `${RUN_DIR}/config-diagnostics.json`;
+const SUBSCRIPTION_DIAGNOSTICS = `${RUN_DIR}/subscription-diagnostics.json`;
+const SUBSCRIPTION_UPDATE_STATUS = `${RUN_DIR}/subscription-update-status.json`;
+const MAX_NODE_IDS = 1000;
+const MAX_NODE_ID_LEN = 128;
 
 function commandOutput(command) {
 	const fd = popen(`${command} 2>&1`);
@@ -35,6 +48,81 @@ function commandOutput(command) {
 	}
 
 	return out;
+}
+
+function readDiagnostics(path) {
+	let content = readfile(path);
+
+	if (!content)
+		return { result: true, time: null, items: [] };
+
+	try {
+		let payload = json(content);
+		return {
+			result: true,
+			time: payload.time,
+			items: payload.items || []
+		};
+	} catch (e) {
+		return { result: false, error: '诊断文件格式错误' };
+	}
+}
+
+function combinedDiagnostics() {
+	let items = [],
+	    latest_time = null;
+
+	for (let path in [ CONFIG_DIAGNOSTICS, SUBSCRIPTION_DIAGNOSTICS ]) {
+		let payload = readDiagnostics(path);
+		if (!payload.result)
+			return payload;
+
+		if (payload.time && (!latest_time || payload.time > latest_time))
+			latest_time = payload.time;
+
+		for (let item in payload.items)
+			push(items, item);
+	}
+
+	return {
+		result: true,
+		time: latest_time,
+		items
+	};
+}
+
+function readSubscriptionUpdateStatus() {
+	let content = readfile(SUBSCRIPTION_UPDATE_STATUS);
+
+	if (!content) {
+		return {
+			result: true,
+			running: false,
+			completed: false,
+			update_result: null,
+			error: null,
+			time: null
+		};
+	}
+
+	try {
+		let payload = json(content);
+		return {
+			result: true,
+			running: !!payload.running,
+			completed: !!payload.completed,
+			update_result: payload.update_result,
+			error: payload.error,
+			time: payload.time
+		};
+	} catch (e) {
+		return { result: false, error: '订阅更新状态文件格式错误' };
+	}
+}
+
+function writeSubscriptionUpdateStatus(payload) {
+	system(`mkdir -p ${shellquote(RUN_DIR)}`);
+	writefile(SUBSCRIPTION_UPDATE_STATUS, sprintf('%.J\n', payload));
 }
 
 // Generate random suffix for temporary files
@@ -69,89 +157,37 @@ function firstValue(value) {
 	return (type(value) === 'array') ? value[0] : value;
 }
 
-function appendUniqueNode(nodes, node_id) {
-	if (!isEmpty(node_id) && !~index(nodes, node_id))
-		push(nodes, node_id);
+function validNodeId(node_id) {
+	return type(node_id) === 'string' &&
+	       length(node_id) > 0 &&
+	       length(node_id) <= MAX_NODE_ID_LEN &&
+	       match(node_id, /^[A-Za-z0-9_]+$/);
 }
 
-function isPreviewManualNode(hpuci, node_id, node_mode) {
-	const section_type = hpuci.get('homeproxy', node_id);
+function validateNodeIds(node_ids) {
+	if (type(node_ids) !== 'array')
+		return { result: false, error: 'illegal node_ids' };
 
-	if (section_type === 'node')
-		return true;
+	if (length(node_ids) > MAX_NODE_IDS)
+		return { result: false, error: 'too many node_ids' };
 
-	if (node_mode === 'selector') {
-		if (node_id in ['direct-out', 'block-out'])
-			return true;
-		if (section_type === 'routing_node' && !isEmpty(hpuci.get('homeproxy', node_id, 'node')))
-			return true;
-	}
+	for (let node_id in node_ids)
+		if (!validNodeId(node_id))
+			return { result: false, error: 'illegal node id' };
 
-	return false;
-}
-
-function appendPreviewManualNode(hpuci, nodes, node_id, node_mode) {
-	if (isPreviewManualNode(hpuci, node_id, node_mode))
-		appendUniqueNode(nodes, node_id);
+	return { result: true };
 }
 
 function expandNodeFilterPreview(manual_nodes, node_filter, node_filter_exclude, node_mode) {
 	const hpuci = cursor();
-	let nodes = [];
-
-	let pattern, exclude_pattern;
-	if (!isEmpty(node_filter)) {
-		try {
-			pattern = regexp(node_filter);
-		} catch(e) {
-			return { result: false, error: e.message || sprintf('%s', e) };
-		}
-	}
-	if (!isEmpty(node_filter_exclude)) {
-		try {
-			exclude_pattern = regexp(node_filter_exclude);
-		} catch(e) {
-			return { result: false, error: e.message || sprintf('%s', e) };
-		}
-	}
-
 	hpuci.load('homeproxy');
 
-	if (type(manual_nodes) === 'array') {
-		for (let node_id in manual_nodes)
-			appendPreviewManualNode(hpuci, nodes, node_id, node_mode);
-	} else {
-		appendPreviewManualNode(hpuci, nodes, manual_nodes, node_mode);
-	}
-
-	if (isEmpty(node_filter) && isEmpty(node_filter_exclude))
-		return { result: true, nodes: nodes };
-
-	/* 包含正则：纳入标签命中的代理节点 */
-	if (pattern)
-		hpuci.foreach('homeproxy', 'node', (cfg) => {
-			const label = cfg.label || cfg['.name'];
-			if (match(label, pattern))
-				appendUniqueNode(nodes, cfg['.name']);
-		});
-
-	/* 排除正则：从已纳入（含手动选择）的节点中剔除标签命中的代理节点 */
-	if (exclude_pattern) {
-		let exclude_ids = {};
-		hpuci.foreach('homeproxy', 'node', (cfg) => {
-			const label = cfg.label || cfg['.name'];
-			if (match(label, exclude_pattern))
-				exclude_ids[cfg['.name']] = true;
-		});
-
-		let kept = [];
-		for (let node_id in nodes)
-			if (!exclude_ids[node_id])
-				push(kept, node_id);
-		nodes = kept;
-	}
-
-	return { result: true, nodes: nodes };
+	return expand_node_filter({
+		uci: hpuci,
+		config: 'homeproxy',
+		node_type: 'node',
+		allow_manual_node: (node_id) => preview_manual_node_allowed(hpuci, 'homeproxy', node_id, node_mode)
+	}, manual_nodes, node_filter, node_filter_exclude);
 }
 
 function stripCidr(value) {
@@ -282,10 +318,9 @@ function restoredServiceExpectations() {
 	const hpuci = cursor();
 	hpuci.load('homeproxy');
 
-	const routing_mode = hpuci.get('homeproxy', 'config', 'routing_mode') || 'bypass_mainland_china',
-	      outbound_node = (routing_mode === 'custom')
-		? (hpuci.get('homeproxy', 'routing', 'default_outbound') || 'nil')
-		: (hpuci.get('homeproxy', 'config', 'main_node') || 'nil'),
+	const main_node = hpuci.get('homeproxy', 'config', 'main_node') || 'nil',
+	      default_outbound = hpuci.get('homeproxy', 'routing', 'default_outbound') || 'nil',
+	      outbound_node = isEmpty(main_node) ? default_outbound : main_node,
 	      server_enabled = hpuci.get('homeproxy', 'server', 'enabled') || '0';
 
 	return {
@@ -650,21 +685,13 @@ const methods = {
 	config_diagnostics: {
 		args: {},
 		call: function(_req) {
-			let content = readfile(CONFIG_DIAGNOSTICS);
-
-			if (!content)
-				return { result: true, items: [] };
-
-			try {
-				let payload = json(content);
-				return {
-					result: true,
-					time: payload.time,
-					items: payload.items || []
-				};
-			} catch (e) {
-				return { result: false, error: '配置诊断文件格式错误' };
-			}
+			return combinedDiagnostics();
+		}
+	},
+	update_subscriptions_status: {
+		args: {},
+		call: function(_req) {
+			return readSubscriptionUpdateStatus();
 		}
 	},
 	acllist_read: {
@@ -790,16 +817,12 @@ const methods = {
 		args: { pattern: 'pattern' },
 		call: function(req) {
 			const pattern = firstValue(req.args?.pattern);
+			const validated = node_filter_compile(pattern);
 
-			if (isEmpty(pattern))
-				return { result: true };
+			if (!validated.result)
+				return { result: false, error: validated.error, limits: validated.limits };
 
-			try {
-				regexp(pattern);
-				return { result: true };
-			} catch(e) {
-				return { result: false, error: e.message || sprintf('%s', e) };
-			}
+			return { result: true, limits: validated.limits };
 		}
 	},
 
@@ -812,6 +835,94 @@ const methods = {
 				firstValue(req.args?.node_filter_exclude),
 				firstValue(req.args?.node)
 			);
+		}
+	},
+
+	node_references: {
+		args: { node_id: 'node_id' },
+		call: function(req) {
+			const node_id = firstValue(req.args?.node_id);
+
+			if (!validNodeId(node_id))
+				return { result: false, error: 'illegal node_id' };
+
+			const hpuci = cursor();
+			hpuci.load('homeproxy');
+
+			return {
+				result: true,
+				node_id: node_id,
+				references: collect_node_references(hpuci, 'homeproxy', node_id)
+			};
+		}
+	},
+
+	remove_subscription_nodes: {
+		args: { node_ids: [] },
+		call: function(req) {
+			const checked = validateNodeIds(req.args?.node_ids);
+			if (!checked.result)
+				return checked;
+
+			const hpuci = cursor();
+			hpuci.load('homeproxy');
+
+			let result = remove_subscription_nodes(hpuci, 'homeproxy', req.args.node_ids);
+			hpuci.commit('homeproxy');
+
+			return {
+				result: true,
+				removed: result.removed,
+				changed: result.changed,
+				changes: result.changes,
+				main_node_fallback: result.main_node_fallback,
+				main_udp_fallback: result.main_udp_fallback
+			};
+		}
+	},
+
+	update_subscriptions: {
+		args: {},
+		call: function(_req) {
+			const status = readSubscriptionUpdateStatus();
+			if (!status.result)
+				return status;
+
+			if (status.running) {
+				return {
+					result: false,
+					error: '订阅更新正在进行中，请稍候。'
+				};
+			}
+
+			writeSubscriptionUpdateStatus({
+				time: time(),
+				running: true,
+				completed: false,
+				update_result: null,
+				error: null
+			});
+
+			const exit_code = system(`(${HP_DIR}/scripts/update_subscriptions.uc </dev/null >/dev/null 2>&1) &`);
+			if (exit_code !== 0) {
+				writeSubscriptionUpdateStatus({
+					time: time(),
+					running: false,
+					completed: true,
+					update_result: false,
+					error: '启动订阅更新失败，请查看 HomeProxy 日志。'
+				});
+
+				return {
+					result: false,
+					error: '启动订阅更新失败，请查看 HomeProxy 日志。'
+				};
+			}
+
+			return {
+				result: true,
+				started: true
+			};
 		}
 	},
 

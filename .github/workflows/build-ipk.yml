@@ -110,13 +110,18 @@ jobs:
           echo "Checking shell scripts..."
           sh -n install.sh
 
-          echo "Checking JavaScript files..."
-          node --check htdocs/luci-static/resources/homeproxy.js
-          node --check htdocs/luci-static/resources/view/homeproxy/client.js
-          node --check htdocs/luci-static/resources/view/homeproxy/node.js
-          node --check htdocs/luci-static/resources/view/homeproxy/backup.js
+	          echo "Checking JavaScript files..."
+	          node --check htdocs/luci-static/resources/homeproxy.js
+	          node --check htdocs/luci-static/resources/homeproxy/dashboard.js
+	          node --check htdocs/luci-static/resources/homeproxy/diagnostics.js
+	          node --check htdocs/luci-static/resources/homeproxy/node-filter.js
+	          node --check htdocs/luci-static/resources/homeproxy/tcping.js
+	          node --check htdocs/luci-static/resources/view/homeproxy/client.js
+	          node --check htdocs/luci-static/resources/view/homeproxy/node.js
+	          node --check htdocs/luci-static/resources/view/homeproxy/backup.js
+	          node tests/generator-golden/check_cases.js
 
-          echo "Checking ucode scripts..."
+	          echo "Checking ucode scripts..."
           # Check .uc files with Node.js (basic syntax only)
           for uc_file in root/etc/homeproxy/scripts/*.uc; do
             if [ -f "$uc_file" ]; then
@@ -126,10 +131,12 @@ jobs:
                 exit 1
               }
             fi
-          done
+	          done
 
-          # Check RPC file (luci.homeproxy) - convert top-level return for Node.js
-          for rpc_file in root/usr/share/rpcd/ucode/luci.homeproxy; do
+	          node --check --input-type=module < tests/generator-golden/run_cases.uc
+
+	          # Check RPC files - convert top-level return for Node.js
+	          for rpc_file in root/usr/share/rpcd/ucode/luci.homeproxy root/usr/share/rpcd/ucode/luci.homeproxy_tcping; do
             if [ -f "$rpc_file" ]; then
               echo "  Checking $rpc_file (RPC handler with top-level return workaround)..."
               sed 's/^return /export default /' "$rpc_file" | node --check --input-type=module || {
