@@ -42,6 +42,27 @@ const callUpdateSubscriptionsStatus = rpc.declare({
 const SUBSCRIPTION_UPDATE_POLL_INTERVAL = 1000;
 const SUBSCRIPTION_UPDATE_POLL_LIMIT = 180;
 
+function subscriptionRpcErrorMessage(err, fallback) {
+	let message = err?.message || err;
+
+	if (message != null)
+		message = String(message);
+
+	if (!message || message === 'Unknown error.' || message === '未知错误。')
+		message = fallback;
+
+	let lower = (message || '').toLowerCase();
+	if (lower.includes('access denied') ||
+		lower.includes('permission denied') ||
+		lower.includes('ubus') ||
+		lower.includes('rpc') ||
+		lower.includes('session')) {
+		return _('HomeProxy 刚完成升级或 rpcd 已重启，当前页面会话可能已失效。请刷新页面或重新登录后重试。');
+	}
+
+	return message || fallback;
+}
+
 function allowInsecureConfirm(ev, _section_id, value) {
 	if (value === '1' && !confirm(_('Are you sure to allow insecure?')))
 		ev.target.firstElementChild.checked = null;
@@ -76,7 +97,9 @@ function wait(ms) {
 }
 
 function pollSubscriptionUpdateStatus(attempt) {
-	return L.resolveDefault(callUpdateSubscriptionsStatus(), { result: false, error: _('Unknown error.') }).then((res) => {
+	return callUpdateSubscriptionsStatus().catch((err) => {
+		throw new Error(subscriptionRpcErrorMessage(err, _('无法读取订阅更新状态。')));
+	}).then((res) => {
 		if (!res.result)
 			throw new Error(res.error || _('无法读取订阅更新状态。'));
 
@@ -1633,7 +1656,12 @@ return view.extend({
 					E('p', _('订阅更新进行中，完成后页面会自动刷新。'))
 				]);
 
-				return L.resolveDefault(callUpdateSubscriptions(), { result: false, error: _('Unknown error.') }).then((res) => {
+				return callUpdateSubscriptions().catch((err) => {
+					return {
+						result: false,
+						error: subscriptionRpcErrorMessage(err, _('更新订阅时发生错误。'))
+					};
+				}).then((res) => {
 					if (!res.result) {
 						ui.hideModal();
 						ui.addNotification(null, E('p', res.error || _('更新订阅时发生错误。')), 'warning');
@@ -1652,7 +1680,7 @@ return view.extend({
 					});
 				}).catch((err) => {
 					ui.hideModal();
-					ui.addNotification(null, E('p', _('更新订阅时发生错误：%s').format(err)), 'warning');
+					ui.addNotification(null, E('p', subscriptionRpcErrorMessage(err, _('更新订阅时发生错误。'))), 'warning');
 					return this.map.reset();
 				});
 			}
