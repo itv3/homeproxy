@@ -113,6 +113,8 @@
 				"action": "hijack-dns"
 			}
 		],
+		"rule_set": [
+		],
 		"auto_detect_interface": true,
 		"default_domain_resolver": {
 			"action": "resolve",
