@@ -10,7 +10,7 @@
 'require ui';
 
 const MAX_NODES = 300;
-const HELP_TEXT = '测速基于当前运行配置。若希望所有节点可测速，请通过节点正则 .* 表达式将其加入运行节点组';
+const HELP_TEXT = _('Speed tests use the current runtime configuration. To test all nodes, add them to a running node group with a node regex such as .*');
 const running = {};
 
 const callNodesTcping = rpc.declare({
@@ -153,7 +153,7 @@ function formatTestedAt(result) {
 		return '';
 
 	try {
-		return '测试时间: ' + new Date(tested_at * 1000).toLocaleString();
+		return _('Tested at: %s').format(new Date(tested_at * 1000).toLocaleString());
 	} catch (e) {
 		return '';
 	}
@@ -181,7 +181,7 @@ function setBusy(section_id) {
 		return false;
 
 	replaceElementContent(el, renderSpinner());
-	el.title = '测试中...';
+	el.title = _('Testing...');
 	el.classList.add('homeproxy-tcping-busy');
 	el.setAttribute('aria-busy', 'true');
 
@@ -199,25 +199,25 @@ function renderResult(section_id, result) {
 		setResult(section_id, '%d ms'.format(result.delay), 'green', title);
 		break;
 	case 'timeout':
-		setResult(section_id, '超时', 'red', title);
+		setResult(section_id, _('Timeout'), 'red', title);
 		break;
 	case 'unsupported':
-		setResult(section_id, '不支持', 'gray', title);
+		setResult(section_id, _('Unsupported'), 'gray', title);
 		break;
 	case 'invalid':
-		setResult(section_id, '无地址', 'red', title);
+		setResult(section_id, _('No address'), 'red', title);
 		break;
 	case 'missing':
-		setResult(section_id, '不存在', 'red', title);
+		setResult(section_id, _('Missing'), 'red', title);
 		break;
 	case 'skipped':
-		setResult(section_id, '跳过', 'gray', title);
+		setResult(section_id, _('Skipped'), 'gray', title);
 		break;
 	case 'unloaded':
-		setResult(section_id, '未加入', 'gray', title);
+		setResult(section_id, _('Not loaded'), 'gray', title);
 		break;
 	default:
-		setResult(section_id, '失败', 'red', title);
+		setResult(section_id, _('Failed'), 'red', title);
 		break;
 	}
 
@@ -227,7 +227,7 @@ function renderResult(section_id, result) {
 function runSingle(section_id, notices) {
 	return L.resolveDefault(callNodeTcping(section_id), {}).then((res) => {
 		if (!res.result) {
-			let message = res.error || '连通性测试失败。';
+			let message = res.error || _('Connectivity test failed.');
 			renderResult(section_id, { status: 'failed', error: message });
 			notices[message] = true;
 			return;
@@ -280,7 +280,7 @@ return baseclass.extend({
 		    notices = {};
 
 		if (!section_ids.length) {
-			ui.addNotification(null, E('p', '没有可测试的节点。'));
+			ui.addNotification(null, E('p', _('No testable nodes.')));
 			return Promise.resolve();
 		}
 
@@ -293,11 +293,11 @@ return baseclass.extend({
 		for (let section_id of skipped_sections)
 			renderResult(section_id, {
 				status: 'skipped',
-				error: '一次最多测试 %d 个节点'.format(MAX_NODES)
+				error: _('At most %d nodes can be tested at once.').format(MAX_NODES)
 			});
 
 		if (!visible)
-			ui.addNotification(null, E('p', '当前页面没有找到延迟列，请强制刷新页面后重试。'));
+			ui.addNotification(null, E('p', _('No latency column was found on this page. Force-refresh the page and try again.')));
 
 		if (btn) {
 			btn.disabled = true;
@@ -306,7 +306,7 @@ return baseclass.extend({
 
 		return L.resolveDefault(callNodesTcping(test_sections), {}).then((res) => {
 			if (!res.result)
-				throw new Error(res.error || '连通性测试失败。');
+				throw new Error(res.error || _('Connectivity test failed.'));
 
 			if (res.warning)
 				notices[res.warning] = true;
@@ -326,7 +326,7 @@ return baseclass.extend({
 				ui.addNotification(null, E('p', message));
 		}).then(() => {
 			if (skipped_sections.length) {
-				let message = '已跳过 %d 个节点，一次最多测试 %d 个节点。'.format(skipped_sections.length, MAX_NODES);
+				let message = _('Skipped %d nodes. At most %d nodes can be tested at once.').format(skipped_sections.length, MAX_NODES);
 				ui.addNotification(null, E('p', message));
 			}
 

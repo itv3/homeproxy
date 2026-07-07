@@ -35,7 +35,7 @@
 		}
 	},
 	"admin/services/homeproxy/backup": {
-		"title": "备份 / 恢复",
+		"title": "Backup / Restore",
 		"order": 25,
 		"action": {
 			"type": "view",

@@ -169,6 +169,16 @@ export function collect_node_references(uci, config, node_id) {
 			});
 	});
 
+	uci.foreach(config, 'dns_rule', (cfg) => {
+		if (uci.get(config, cfg['.name'], 'outbound') === node_id)
+			addReference(refs, {
+				scope: 'dns_rule_outbound',
+				section: cfg['.name'],
+				option: 'outbound',
+				label: sprintf('DNS Rules / %s / Outbound', cfg.label || cfg['.name'])
+			});
+	});
+
 	uci.foreach(config, 'ruleset', (cfg) => {
 		if (uci.get(config, cfg['.name'], 'outbound') === node_id)
 			addReference(refs, {
@@ -285,6 +295,14 @@ export function cleanup_node_references_for_delete(uci, config, node_id, opts) {
 		if (uci.get(config, cfg['.name'], 'outbound') === node_id) {
 			uci.set(config, cfg['.name'], 'outbound', 'block-out');
 			addCleanupChange(changes, node_id, 'dns_server_outbound', cfg['.name'], 'outbound', 'set', 'block-out');
+			changed = true;
+		}
+	});
+
+	uci.foreach(config, 'dns_rule', (cfg) => {
+		if (uci.get(config, cfg['.name'], 'outbound') === node_id) {
+			uci.set(config, cfg['.name'], 'outbound', 'block-out');
+			addCleanupChange(changes, node_id, 'dns_rule_outbound', cfg['.name'], 'outbound', 'set', 'block-out');
 			changed = true;
 		}
 	});

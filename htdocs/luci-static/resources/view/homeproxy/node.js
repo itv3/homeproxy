@@ -17,24 +17,24 @@
 'require tools.widgets as widgets';
 
 const callNodeReferences = rpc.declare({
-	object: 'luci.homeproxy',
+	object: 'luci.homeproxy_node_tools',
 	method: 'node_references',
 	params: [ 'node_id' ],
 	expect: { '': {} }
 });
 const callRemoveSubscriptionNodes = rpc.declare({
-	object: 'luci.homeproxy',
+	object: 'luci.homeproxy_node_tools',
 	method: 'remove_subscription_nodes',
 	params: [ 'node_ids' ],
 	expect: { '': {} }
 });
 const callUpdateSubscriptions = rpc.declare({
-	object: 'luci.homeproxy',
+	object: 'luci.homeproxy_node_tools',
 	method: 'update_subscriptions',
 	expect: { '': {} }
 });
 const callUpdateSubscriptionsStatus = rpc.declare({
-	object: 'luci.homeproxy',
+	object: 'luci.homeproxy_node_tools',
 	method: 'update_subscriptions_status',
 	expect: { '': {} }
 });
@@ -57,7 +57,7 @@ function subscriptionRpcErrorMessage(err, fallback) {
 		lower.includes('ubus') ||
 		lower.includes('rpc') ||
 		lower.includes('session')) {
-		return _('HomeProxy 刚完成升级或 rpcd 已重启，当前页面会话可能已失效。请刷新页面或重新登录后重试。');
+		return _('HomeProxy was just upgraded or rpcd has restarted. The current page session may be expired. Refresh the page or sign in again before retrying.');
 	}
 
 	return message || fallback;
@@ -71,7 +71,7 @@ function allowInsecureConfirm(ev, _section_id, value) {
 function showNodeReferenceNotice(section_id) {
 	return L.resolveDefault(callNodeReferences(section_id), { result: false, error: _('Unknown error.') }).then((res) => {
 		if (!res.result) {
-			ui.addNotification(null, E('p', res.error || _('无法检查节点引用，请稍后重试。')), 'warning');
+			ui.addNotification(null, E('p', res.error || _('Failed to check node references. Please try again later.')), 'warning');
 			return true;
 		}
 
@@ -81,13 +81,13 @@ function showNodeReferenceNotice(section_id) {
 
 		let label = uci.get('homeproxy', section_id, 'label') || section_id;
 		ui.addNotification(null, E('div', [
-			E('p', _('节点 %s 仍被以下配置引用，请先删除引用后再删除节点。').format(label)),
+			E('p', _('Node %s is still referenced by these settings. Remove the references before deleting the node.').format(label)),
 			E('ul', refs.map((ref) => E('li', ref?.label || ref?.scope || '')))
 		]), 'warning');
 
 		return true;
 	}).catch((err) => {
-		ui.addNotification(null, E('p', _('无法检查节点引用，请稍后重试。')), 'warning');
+		ui.addNotification(null, E('p', _('Failed to check node references. Please try again later.')), 'warning');
 		return true;
 	});
 }
@@ -98,14 +98,14 @@ function wait(ms) {
 
 function pollSubscriptionUpdateStatus(attempt) {
 	return callUpdateSubscriptionsStatus().catch((err) => {
-		throw new Error(subscriptionRpcErrorMessage(err, _('无法读取订阅更新状态。')));
+		throw new Error(subscriptionRpcErrorMessage(err, _('Failed to read subscription update status.')));
 	}).then((res) => {
 		if (!res.result)
-			throw new Error(res.error || _('无法读取订阅更新状态。'));
+			throw new Error(res.error || _('Failed to read subscription update status.'));
 
 		if (!res.completed) {
 			if (attempt >= SUBSCRIPTION_UPDATE_POLL_LIMIT)
-				throw new Error(_('等待订阅更新完成超时。'));
+				throw new Error(_('Timed out waiting for subscription update to finish.'));
 
 			return wait(SUBSCRIPTION_UPDATE_POLL_INTERVAL).then(() => pollSubscriptionUpdateStatus(attempt + 1));
 		}
@@ -551,24 +551,24 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.rmempty = false;
 
 	o = s.option(form.DummyValue, '_tcping_delay', '延迟');
-		o.editable = true;
-		o.rmempty = true;
-		o.renderWidget = function(section_id) {
-			hpTcping.ensureStyle();
-			return E('span', {
-				id: hpTcping.nodeId(section_id),
-				class: 'homeproxy-node-tcping homeproxy-latency-pill',
-				role: 'button',
-				tabindex: '0',
-				title: '点击测速',
-				click: (ev) => hpTcping.runNode(section_id, ev),
-				keydown: (ev) => {
-					if (ev.key === 'Enter' || ev.key === ' ') {
-						ev.preventDefault();
-						return hpTcping.runNode(section_id, ev);
-					}
+	o.editable = true;
+	o.rmempty = true;
+	o.renderWidget = function(section_id) {
+		hpTcping.ensureStyle();
+		return E('span', {
+			id: hpTcping.nodeId(section_id),
+			class: 'homeproxy-node-tcping homeproxy-latency-pill',
+			role: 'button',
+			tabindex: '0',
+			title: '点击测速',
+			click: (ev) => hpTcping.runNode(section_id, ev),
+			keydown: (ev) => {
+				if (ev.key === 'Enter' || ev.key === ' ') {
+					ev.preventDefault();
+					return hpTcping.runNode(section_id, ev);
 				}
-			}, '-');
+			}
+		}, '-');
 	}
 
 	o = s.option(form.Value, 'username', _('Username'));
@@ -743,19 +743,19 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.rmempty = false;
 	o.modalonly = true;
 
-	o = s.option(form.ListValue, 'shadowsocks_plugin', _('插件'));
+	o = s.option(form.ListValue, 'shadowsocks_plugin', _('Plugin'));
 	o.value('', _('none'));
 	o.value('obfs-local');
 	o.value('v2ray-plugin');
 	o.depends('type', 'shadowsocks');
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'shadowsocks_plugin_opts', _('插件选项'));
+	o = s.option(form.Value, 'shadowsocks_plugin_opts', _('Plugin opts'));
 	o.depends('shadowsocks_plugin', 'obfs-local');
 	o.depends('shadowsocks_plugin', 'v2ray-plugin');
 	o.modalonly = true;
 
-	o = s.option(form.Flag, 'shadowtls_enabled', _('启用 ShadowTLS'));
+	o = s.option(form.Flag, 'shadowtls_enabled', _('Enable ShadowTLS'));
 	o.depends('type', 'shadowsocks');
 	o.rmempty = false;
 	o.load = function(section_id) {
@@ -767,7 +767,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	}
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'shadowtls_address', _('ShadowTLS 地址'));
+	o = s.option(form.Value, 'shadowtls_address', _('ShadowTLS address'));
 	o.datatype = 'host';
 	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
 	o.validate = function(section_id, value) {
@@ -775,14 +775,14 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 			let type = this.section.formvalue(section_id, 'type');
 			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
 			if (type === 'shadowsocks' && enabled === '1' && !value)
-				return _('不能为空');
+				return _('Cannot be empty');
 		}
 
 		return true;
 	}
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'shadowtls_port', _('ShadowTLS 端口'));
+	o = s.option(form.Value, 'shadowtls_port', _('ShadowTLS port'));
 	o.datatype = 'port';
 	o.placeholder = '443';
 	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
@@ -791,14 +791,14 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 			let type = this.section.formvalue(section_id, 'type');
 			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
 			if (type === 'shadowsocks' && enabled === '1' && !value)
-				return _('不能为空');
+				return _('Cannot be empty');
 		}
 
 		return true;
 	}
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'shadowtls_password', _('ShadowTLS 密码'));
+	o = s.option(form.Value, 'shadowtls_password', _('ShadowTLS password'));
 	o.password = true;
 	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
 	o.validate = function(section_id, value) {
@@ -806,24 +806,24 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 			let type = this.section.formvalue(section_id, 'type');
 			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
 			if (type === 'shadowsocks' && enabled === '1' && !value)
-				return _('不能为空');
+				return _('Cannot be empty');
 		}
 
 		return true;
 	}
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'shadowtls_sni', _('ShadowTLS 伪装 SNI'));
+	o = s.option(form.Value, 'shadowtls_sni', _('ShadowTLS masquerade SNI'));
 	o.datatype = 'hostname';
 	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
 	o.modalonly = true;
 	/* Shadowsocks config end */
 
 	/* ShadowTLS config */
-	o = s.option(form.ListValue, 'shadowtls_version', _('ShadowTLS 版本'));
-	o.value('1', _('版本 1'));
-	o.value('2', _('版本 2'));
-	o.value('3', _('版本 3'));
+	o = s.option(form.ListValue, 'shadowtls_version', _('ShadowTLS version'));
+	o.value('1', _('v1'));
+	o.value('2', _('v2'));
+	o.value('3', _('v3'));
 	o.default = '1';
 	o.depends('type', 'shadowtls');
 	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
@@ -1650,76 +1650,76 @@ return view.extend({
 				this.readonly = true;
 				return _('No subscription available')
 			}
-			}
-			o.onclick = function() {
-				ui.showModal(_('正在更新订阅...'), [
-					E('p', _('订阅更新进行中，完成后页面会自动刷新。'))
-				]);
+		}
+		o.onclick = function() {
+			ui.showModal(_('Updating subscriptions...'), [
+				E('p', _('Subscription update is running. The page will refresh automatically when it finishes.'))
+			]);
 
-				return callUpdateSubscriptions().catch((err) => {
-					return {
-						result: false,
-						error: subscriptionRpcErrorMessage(err, _('更新订阅时发生错误。'))
-					};
-				}).then((res) => {
-					if (!res.result) {
-						ui.hideModal();
-						ui.addNotification(null, E('p', res.error || _('更新订阅时发生错误。')), 'warning');
+			return callUpdateSubscriptions().catch((err) => {
+				return {
+					result: false,
+					error: subscriptionRpcErrorMessage(err, _('An error occurred while updating subscriptions.'))
+				};
+			}).then((res) => {
+				if (!res.result) {
+					ui.hideModal();
+					ui.addNotification(null, E('p', res.error || _('An error occurred while updating subscriptions.')), 'warning');
+					return this.map.reset();
+				}
+
+				return pollSubscriptionUpdateStatus(0).then((status) => {
+					ui.hideModal();
+
+					if (!status.update_result) {
+						ui.addNotification(null, E('p', status.error || _('An error occurred while updating subscriptions.')), 'warning');
 						return this.map.reset();
 					}
 
-					return pollSubscriptionUpdateStatus(0).then((status) => {
-						ui.hideModal();
-
-						if (!status.update_result) {
-							ui.addNotification(null, E('p', status.error || _('更新订阅时发生错误。')), 'warning');
-							return this.map.reset();
-						}
-
-						return location.reload();
-					});
-				}).catch((err) => {
-					ui.hideModal();
-					ui.addNotification(null, E('p', subscriptionRpcErrorMessage(err, _('更新订阅时发生错误。'))), 'warning');
-					return this.map.reset();
-				});
-			}
-
-			o = s.taboption('subscription', form.Button, '_remove_subscriptions', _('Remove all nodes from subscriptions'));
-			o.inputstyle = 'reset';
-			o.inputtitle = function() {
-				let subnodes = [];
-				uci.sections(data[0], 'node', (res) => {
-					if (res.grouphash)
-						subnodes = subnodes.concat(res['.name'])
-				});
-
-				if (subnodes.length > 0) {
-					return _('Remove %s nodes').format(subnodes.length);
-				} else {
-					this.readonly = true;
-					return _('No subscription node');
-				}
-			}
-			o.onclick = function() {
-				let subnodes = [];
-				uci.sections(data[0], 'node', (res) => {
-					if (res.grouphash)
-						subnodes = subnodes.concat(res['.name'])
-				});
-
-				return L.resolveDefault(callRemoveSubscriptionNodes(subnodes), { result: false, error: _('Unknown error.') }).then((res) => {
-					if (!res.result)
-						throw new Error(res.error || _('Unknown error.'));
-
-					this.inputtitle = _('%s nodes removed').format(res.removed || 0);
-					this.readonly = true;
 					return location.reload();
-				}).catch((err) => {
-					ui.addNotification(null, E('p', _('An error occurred during removing subscription nodes: %s').format(err.message || err)));
-					return this.map.reset();
 				});
+			}).catch((err) => {
+				ui.hideModal();
+				ui.addNotification(null, E('p', subscriptionRpcErrorMessage(err, _('An error occurred while updating subscriptions.'))), 'warning');
+				return this.map.reset();
+			});
+		}
+
+		o = s.taboption('subscription', form.Button, '_remove_subscriptions', _('Remove all nodes from subscriptions'));
+		o.inputstyle = 'reset';
+		o.inputtitle = function() {
+			let subnodes = [];
+			uci.sections(data[0], 'node', (res) => {
+				if (res.grouphash)
+					subnodes = subnodes.concat(res['.name'])
+			});
+
+			if (subnodes.length > 0) {
+				return _('Remove %s nodes').format(subnodes.length);
+			} else {
+				this.readonly = true;
+				return _('No subscription node');
 			}
+		}
+		o.onclick = function() {
+			let subnodes = [];
+			uci.sections(data[0], 'node', (res) => {
+				if (res.grouphash)
+					subnodes = subnodes.concat(res['.name'])
+			});
+
+			return L.resolveDefault(callRemoveSubscriptionNodes(subnodes), { result: false, error: _('Unknown error.') }).then((res) => {
+				if (!res.result)
+					throw new Error(res.error || _('Unknown error.'));
+
+				this.inputtitle = _('%s nodes removed').format(res.removed || 0);
+				this.readonly = true;
+				return location.reload();
+			}).catch((err) => {
+				ui.addNotification(null, E('p', _('An error occurred during removing subscription nodes: %s').format(err.message || err)));
+				return this.map.reset();
+			});
+		}
 		/* Subscriptions settings end */
 
 		return m.render();

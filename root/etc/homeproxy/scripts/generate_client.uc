@@ -19,6 +19,7 @@ import {
 import {
 	apply_outbound_tag_rename as applyOutboundTagRenameHelper,
 	assert_unique_outbound_tags as assertUniqueOutboundTagsHelper,
+	assert_no_stale_outbound_tags as assertNoStaleOutboundTagsHelper,
 	build_outbound_tag_map,
 	get_outbound_tag,
 	get_shadowtls_outbound_tag,
@@ -84,7 +85,7 @@ function writeDiagnostics() {
 	}
 }
 
-const ubus = connect();
+const ubus = TEST_ROOT ? null : connect();
 
 /* const features = ubus.call('luci.homeproxy', 'singbox_get_features') || {}; */
 
@@ -484,9 +485,15 @@ function apply_routing_node_options(outbound, cfg) {
 		return;
 
 	outbound.bind_interface = cfg.bind_interface;
-	if (cfg.outbound)
-		outbound.detour = get_outbound(cfg.outbound, 'block-out',
-			sprintf('路由节点 %s 的上游出站', cfg.label || cfg['.name']));
+	if (cfg.outbound) {
+		if (routingTarget.routing_node_has_path(routing_target_ctx, cfg.outbound, cfg['.name'], {}))
+			reportError('error',
+				sprintf('路由节点配置错误：%s 的上游出站与自身形成循环引用。', cfg.label || cfg['.name']),
+				'进入 LuCI 界面 -> 服务 -> HomeProxy -> 路由节点，检查该节点的"上游出站"配置');
+		else
+			outbound.detour = get_outbound(cfg.outbound, 'block-out',
+				sprintf('路由节点 %s 的上游出站', cfg.label || cfg['.name']));
+	}
 	if (cfg.domain_resolver)
 		outbound.domain_resolver = {
 			server: get_resolver(cfg.domain_resolver),
@@ -606,8 +613,8 @@ function push_routing_target_outbound(client_config, target, routing_nodes) {
 	);
 }
 
-function get_valid_selector_outbounds(selector_nodes, owner) {
-	return routingTarget.get_valid_selector_outbounds(routing_target_ctx, selector_nodes, owner);
+function get_valid_selector_outbounds(selector_nodes, owner, owner_section) {
+	return routingTarget.get_valid_selector_outbounds(routing_target_ctx, selector_nodes, owner, owner_section);
 }
 
 function get_outbound(cfg, fallback, owner) {
@@ -646,6 +653,14 @@ function assert_unique_outbound_tags(client_config) {
 		reportError('error',
 			sprintf('rename 后出现重复 outbound tag: %s', tag),
 			'通常意味着去重算法异常；请附带节点 label / section 列表反馈');
+	});
+}
+
+function assert_no_stale_outbound_tags(client_config) {
+	return assertNoStaleOutboundTagsHelper(client_config, routing_target_ctx.tag_map, (old_tag, final_tag) => {
+		reportError('error',
+			sprintf('rename 后仍残留旧 outbound tag 引用: %s -> %s', old_tag, final_tag),
+			'请检查新增 sing-box 字段是否需要纳入 outbound tag rename 规则');
 	});
 }
 /* Config helper end */
@@ -1039,7 +1054,7 @@ if (!isEmpty(main_node)) {
 		} else if (cfg.node === 'selector') {
 			const owner = cfg.label || cfg['.name'];
 			const selector_nodes = expand_node_filter(cfg.selector_nodes, cfg.node_filter, cfg.node_filter_exclude, owner, true);
-			const selector_outbounds = get_valid_selector_outbounds(selector_nodes, owner);
+			const selector_outbounds = get_valid_selector_outbounds(selector_nodes, owner, cfg['.name']);
 			if (!length(selector_outbounds)) {
 				reportError('warning',
 					sprintf('路由节点 %s 没有可用节点，已在本次生成中临时回退为阻断出站。', owner),
@@ -1293,6 +1308,7 @@ if (isEmpty(config.experimental))
 
 apply_outbound_tag_rename(config);
 assert_unique_outbound_tags(config);
+assert_no_stale_outbound_tags(config);
 writeDiagnostics();
 
 /*

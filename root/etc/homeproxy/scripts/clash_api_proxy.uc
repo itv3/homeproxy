@@ -11,6 +11,7 @@ import * as socket from 'socket';
 import * as uloop from 'uloop';
 import { cursor } from 'uci';
 import { urldecode, urlencode } from 'luci.http';
+import { parse_controller } from '/etc/homeproxy/scripts/clash_api.uc';
 
 const uci = cursor();
 const uciconfig = 'homeproxy';
@@ -45,26 +46,11 @@ function toArray(value) {
 	return [ value ];
 }
 
-function parseController(value, default_port) {
-	value = trim(replace(value || '', /^https?:\/\//, ''));
-	value = replace(value, /\/.*$/, '');
-
-	let matched = match(value, /^\[([^\]]+)\](:([0-9]+))?$/);
-	if (matched)
-		return { host: matched[1], port: int(matched[3] || default_port) };
-
-	matched = match(value, /^([^:]+):([0-9]+)$/);
-	if (matched)
-		return { host: matched[1], port: int(matched[2]) };
-
-	return { host: value, port: int(default_port) };
-}
-
 function deriveProxyController(target) {
-	target = parseController(target || '127.0.0.1:9090', 9090);
+	target = parse_controller(target || '127.0.0.1:9090', 9090);
 
 	if (isEmpty(target.host))
-		target.host = '192.168.9.1';
+		target.host = '127.0.0.1';
 
 	return { host: target.host, port: 9091 };
 }
@@ -953,13 +939,13 @@ const clash_api_enabled = uci.get(uciconfig, ucimain, 'clash_api_enabled') || '0
 if (clash_api_enabled !== '1')
 	exit(0);
 
-target = parseController(uci.get(uciconfig, ucimain, 'clash_api_external_controller') || '127.0.0.1:9090', 9090);
+target = parse_controller(uci.get(uciconfig, ucimain, 'clash_api_external_controller') || '127.0.0.1:9090', 9090);
 listen = isEmpty(uci.get(uciconfig, ucimain, 'clash_api_proxy_external_controller'))
 	? deriveProxyController((index(target.host, ':') >= 0 ? '[' + target.host + ']' : target.host) + ':' + target.port)
-	: parseController(uci.get(uciconfig, ucimain, 'clash_api_proxy_external_controller'), 9091);
+	: parse_controller(uci.get(uciconfig, ucimain, 'clash_api_proxy_external_controller'), 9091);
 
 if (isEmpty(listen.host))
-	listen.host = '192.168.9.1';
+	listen.host = '127.0.0.1';
 
 server = socket.listen(listen.host, listen.port, null, 128, true);
 

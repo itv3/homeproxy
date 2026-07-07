@@ -47,8 +47,26 @@
     }
   },
   {
+    "name": "disabled-routing-node",
+    "description": "禁用的 routing_node 不能作为有效路由节点解析，引用时回退到 block-out 并产生 warning",
+    "generator_fixture": true,
+    "expects": {
+      "route_final": "block-out",
+      "diagnostics": ["warning"]
+    }
+  },
+  {
     "name": "routing-cycle",
     "description": "循环引用路由节点应产生 error 诊断且不覆盖旧运行配置",
+    "generator_fixture": true,
+    "expects": {
+      "diagnostics": ["error"],
+      "write_runtime_config": false
+    }
+  },
+  {
+    "name": "selector-cycle",
+    "description": "Selector 节点列表互相引用时应产生 error 诊断且不覆盖旧运行配置",
     "generator_fixture": true,
     "expects": {
       "diagnostics": ["error"],
@@ -102,7 +120,7 @@
   },
   {
     "name": "remove-subscription-node-references",
-    "description": "删除订阅节点时清理 main、routing、dns、ruleset 引用",
+    "description": "删除订阅节点时清理 main、routing、dns server、dns rule、ruleset 引用",
     "generator_fixture": false,
     "expects": {
       "references_cleaned": true,

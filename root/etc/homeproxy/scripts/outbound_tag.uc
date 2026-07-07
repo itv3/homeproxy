@@ -109,6 +109,28 @@ function renameTags(value, rename, rename_string) {
 	return value;
 }
 
+function collectStaleTagReferences(value, rename, rename_string, refs) {
+	let t = type(value);
+
+	if (t === 'string') {
+		if (rename_string && value in rename && rename[value] !== value)
+			refs[value] = true;
+		return;
+	}
+
+	if (t === 'object') {
+		for (let k in value)
+			collectStaleTagReferences(value[k], rename,
+				k in ['tag', 'outbound', 'outbounds', 'detour', 'default', 'final', 'download_detour'],
+				refs);
+		return;
+	}
+
+	if (t === 'array')
+		for (let i in value)
+			collectStaleTagReferences(i, rename, rename_string, refs);
+}
+
 function buildTagRenameMap(tag_map) {
 	let rename = {};
 
@@ -237,6 +259,19 @@ export function assert_unique_outbound_tags(client_config, on_duplicate) {
 
 	checkUniqueTags(client_config?.outbounds, seen, on_duplicate);
 	checkUniqueTags(client_config?.endpoints, seen, on_duplicate);
+
+	return true;
+};
+
+export function assert_no_stale_outbound_tags(client_config, tag_map, on_stale) {
+	let refs = {},
+	    rename = buildTagRenameMap(tag_map);
+
+	collectStaleTagReferences(client_config, rename, false, refs);
+
+	for (let tag in keys(refs))
+		if (type(on_stale) === 'function')
+			on_stale(tag, rename[tag]);
 
 	return true;
 };

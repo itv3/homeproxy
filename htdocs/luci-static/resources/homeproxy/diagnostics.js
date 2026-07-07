@@ -11,7 +11,7 @@
 'require homeproxy as hp';
 
 const callConfigDiagnostics = rpc.declare({
-	object: 'luci.homeproxy',
+	object: 'luci.homeproxy_node_tools',
 	method: 'config_diagnostics',
 	expect: { '': {} }
 });

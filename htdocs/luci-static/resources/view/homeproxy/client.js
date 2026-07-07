@@ -22,21 +22,6 @@
 'require tools.firewall as fwtool';
 'require tools.widgets as widgets';
 
-// Form field factory (only the helper actually used is kept)
-const fieldFactory = {
-	uintField(section, tab, name, label, placeholder, depends) {
-		let field = section.taboption(tab, form.Value, name, label);
-		field.datatype = 'uinteger';
-		if (placeholder) field.placeholder = placeholder;
-		if (depends) {
-			for (let key in depends)
-				field.depends(key, depends[key]);
-		}
-		field.modalonly = true;
-		return field;
-	}
-};
-
 const callServiceList = rpc.declare({
 	object: 'service',
 	method: 'list',
@@ -190,15 +175,17 @@ return view.extend({
 		o.depends('main_node', 'urltest');
 		o.rmempty = false;
 
-		o = fieldFactory.uintField(s, 'routing', 'main_urltest_interval', _('Test interval'),
-			'180', {'main_node': 'urltest'});
-		o.description = _('The test interval in seconds.');
-		o.modalonly = false;
+		o = s.taboption('routing', form.Value, 'main_urltest_interval', _('Test interval'),
+			_('The test interval in seconds.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '180';
+		o.depends('main_node', 'urltest');
 
-		o = fieldFactory.uintField(s, 'routing', 'main_urltest_tolerance', _('Test tolerance'),
-			'50', {'main_node': 'urltest'});
-		o.description = _('The test tolerance in milliseconds.');
-		o.modalonly = false;
+		o = s.taboption('routing', form.Value, 'main_urltest_tolerance', _('Test tolerance'),
+			_('The test tolerance in milliseconds.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '50';
+		o.depends('main_node', 'urltest');
 
 		o = s.taboption('routing', form.ListValue, 'main_udp_node', _('Main UDP node'));
 		o.value('nil', _('Disable'));
@@ -526,23 +513,8 @@ return view.extend({
 			return this.super('load', section_id);
 		}
 		so.validate = function(section_id, value) {
-			if (section_id && value) {
-				let node = this.section.formvalue(section_id, 'node');
-
-				let conflict = false;
-				uci.sections(data[0], 'routing_node', (res) => {
-					if (res['.name'] !== section_id) {
-						if (res.outbound === section_id && res['.name'] == value)
-							conflict = true;
-						else if (res.node === 'urltest' && res.urltest_nodes?.includes(node) && res['.name'] == value)
-							conflict = true;
-						else if (res.node === 'selector' && res.selector_nodes?.includes(node) && res['.name'] == value)
-							conflict = true;
-					}
-				});
-				if (conflict)
-					return _('Recursive outbound detected!');
-			}
+			if (section_id && value && selectorHasPath(value, section_id, {}))
+				return _('Recursive outbound detected!');
 
 			return true;
 		}
@@ -723,6 +695,12 @@ return view.extend({
 			addSelectableOutbounds(this, section_id, true);
 
 			return this.super('load', section_id);
+		}
+		so.validate = function(section_id, value) {
+			if (section_id && value && selectorHasPath(value, section_id, {}))
+				return _('Recursive outbound detected!');
+
+			return true;
 		}
 		so.depends('node', 'selector');
 		so.modalonly = true;

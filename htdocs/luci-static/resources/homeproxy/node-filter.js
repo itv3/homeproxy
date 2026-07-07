@@ -11,14 +11,14 @@
 'require rpc';
 
 const callValidateRegex = rpc.declare({
-	object: 'luci.homeproxy',
+	object: 'luci.homeproxy_node_tools',
 	method: 'validate_regex',
 	params: ['pattern'],
 	expect: { '': {} }
 });
 
 const callPreviewNodeFilter = rpc.declare({
-	object: 'luci.homeproxy',
+	object: 'luci.homeproxy_node_tools',
 	method: 'preview_node_filter',
 	params: ['manual_nodes', 'node_filter', 'node_filter_exclude', 'node'],
 	expect: { '': {} }

@@ -15,6 +15,7 @@ on:
       - 'htdocs/**'
       - 'po/**'
       - 'root/**'
+      - 'tests/**'
       - 'Makefile'
       - '.github/**'
       - '!.github/ISSUE_TEMPLATE/**'
@@ -30,6 +31,7 @@ on:
     paths:
       - 'htdocs/**'
       - 'root/**'
+      - 'tests/**'
       - 'Makefile'
       - '.github/**'
       - '!.github/ISSUE_TEMPLATE/**'
@@ -110,18 +112,22 @@ jobs:
           echo "Checking shell scripts..."
           sh -n install.sh
 
-	          echo "Checking JavaScript files..."
-	          node --check htdocs/luci-static/resources/homeproxy.js
-	          node --check htdocs/luci-static/resources/homeproxy/dashboard.js
-	          node --check htdocs/luci-static/resources/homeproxy/diagnostics.js
-	          node --check htdocs/luci-static/resources/homeproxy/node-filter.js
-	          node --check htdocs/luci-static/resources/homeproxy/tcping.js
-	          node --check htdocs/luci-static/resources/view/homeproxy/client.js
-	          node --check htdocs/luci-static/resources/view/homeproxy/node.js
-	          node --check htdocs/luci-static/resources/view/homeproxy/backup.js
-	          node tests/generator-golden/check_cases.js
+          echo "Checking JavaScript files..."
+          for js_file in \
+            htdocs/luci-static/resources/homeproxy.js \
+            htdocs/luci-static/resources/homeproxy/*.js \
+            htdocs/luci-static/resources/view/homeproxy/*.js; do
+            if [ -f "$js_file" ]; then
+              echo "  Checking $js_file..."
+              node --check "$js_file" || {
+                echo "ERROR: Syntax error in $js_file"
+                exit 1
+              }
+            fi
+          done
+          node tests/generator-golden/check_cases.js
 
-	          echo "Checking ucode scripts..."
+          echo "Checking ucode scripts..."
           # Check .uc files with Node.js (basic syntax only)
           for uc_file in root/etc/homeproxy/scripts/*.uc; do
             if [ -f "$uc_file" ]; then
@@ -131,12 +137,12 @@ jobs:
                 exit 1
               }
             fi
-	          done
+          done
 
-	          node --check --input-type=module < tests/generator-golden/run_cases.uc
+          node --check --input-type=module < tests/generator-golden/run_cases.uc
 
-	          # Check RPC files - convert top-level return for Node.js
-	          for rpc_file in root/usr/share/rpcd/ucode/luci.homeproxy root/usr/share/rpcd/ucode/luci.homeproxy_tcping; do
+          # Check RPC files - convert top-level return for Node.js
+          for rpc_file in root/usr/share/rpcd/ucode/luci.homeproxy*; do
             if [ -f "$rpc_file" ]; then
               echo "  Checking $rpc_file (RPC handler with top-level return workaround)..."
               sed 's/^return /export default /' "$rpc_file" | node --check --input-type=module || {
@@ -147,6 +153,31 @@ jobs:
           done
 
           echo "All syntax checks passed"
+
+      - name: Generator golden check
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            openwrt/rootfs:x86-64 \
+            /bin/sh -ec '
+              if command -v apk >/dev/null 2>&1; then
+                apk update
+                apk add ucode ucode-mod-fs ucode-mod-math ucode-mod-uci ucode-mod-ubus luci-base
+              else
+                opkg update
+                opkg install ucode ucode-mod-fs ucode-mod-math ucode-mod-uci ucode-mod-ubus luci-base
+              fi
+
+              mkdir -p /etc/homeproxy/scripts
+              cp -fp root/etc/homeproxy/scripts/*.uc /etc/homeproxy/scripts/
+              ucode -S -L root/etc/homeproxy/scripts \
+                tests/generator-golden/run_cases.uc \
+                tests/generator-golden \
+                root/etc/homeproxy/scripts/generate_client.uc \
+                root/etc/homeproxy/scripts
+            '
 
       - name: Build ipk file
         run: |

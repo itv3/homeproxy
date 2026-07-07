@@ -15,6 +15,15 @@ function isEmpty(value) {
 	return !value || value === 'nil' || (type(value) in ['array', 'object'] && length(value) === 0);
 }
 
+function toArray(value) {
+	if (type(value) === 'array')
+		return value;
+	else if (isEmpty(value))
+		return [];
+
+	return [ value ];
+}
+
 function report(ctx, level, message, suggestion) {
 	if (type(ctx.reportError) === 'function')
 		ctx.reportError(level, message, suggestion);
@@ -37,9 +46,62 @@ export function is_node_section(ctx, target) {
 };
 
 export function is_routing_node_section(ctx, target) {
-	const node = ctx.uci.get(ctx.config, target, 'node');
+	const cfg = ctx.uci.get_all(ctx.config, target) || {};
 
-	return !isEmpty(node);
+	return cfg['.type'] === (ctx.routing_node_type || 'routing_node') &&
+	       cfg.enabled === '1' &&
+	       !isEmpty(cfg.node);
+};
+
+function addRoutingNodeEdge(ctx, edges, target) {
+	target = normalizeOutboundTargetValue(target, ctx?.tag_map);
+
+	if (is_routing_node_section(ctx, target))
+		push(edges, target);
+}
+
+function routingNodeEdges(ctx, section) {
+	let cfg = ctx.uci.get_all(ctx.config, section) || {},
+	    edges = [];
+
+	if (!is_routing_node_section(ctx, section))
+		return edges;
+
+	if (cfg.node === 'selector') {
+		for (let node_id in toArray(cfg.selector_nodes))
+			addRoutingNodeEdge(ctx, edges, node_id);
+		addRoutingNodeEdge(ctx, edges, cfg.selector_default);
+	} else if (cfg.node === 'urltest') {
+		for (let node_id in toArray(cfg.urltest_nodes))
+			addRoutingNodeEdge(ctx, edges, node_id);
+	} else {
+		addRoutingNodeEdge(ctx, edges, cfg.node);
+	}
+
+	addRoutingNodeEdge(ctx, edges, cfg.outbound);
+
+	return edges;
+}
+
+export function routing_node_has_path(ctx, start, target, seen) {
+	start = normalizeOutboundTargetValue(start, ctx?.tag_map);
+	target = normalizeOutboundTargetValue(target, ctx?.tag_map);
+
+	if (isEmpty(start) || isEmpty(target) || !is_routing_node_section(ctx, start))
+		return false;
+	if (start === target)
+		return true;
+
+	seen = seen || {};
+	if (seen[start])
+		return false;
+	seen[start] = true;
+
+	for (let edge in routingNodeEdges(ctx, start))
+		if (routing_node_has_path(ctx, edge, target, seen))
+			return true;
+
+	return false;
 };
 
 export function normalize_outbound_target(target, tag_map) {
@@ -86,15 +148,17 @@ export function resolve_outbound_target(ctx, target, owner, seen_path) {
 		return { fatal: true };
 	}
 
-	const routing_node = ctx.uci.get(ctx.config, target, 'node');
-	if (isEmpty(routing_node)) {
+	if (!is_routing_node_section(ctx, target)) {
 		if (owner)
 			report(ctx, 'warning',
 				sprintf('%s 引用了已删除或无效的节点：%s，已在本次生成中跳过。', owner, join(' -> ', [ ...seen_path, target ])),
 				'请进入 LuCI 界面检查对应的节点或路由节点引用');
 
 		return null;
-	} else if (routing_node === 'urltest' || routing_node === 'selector') {
+	}
+
+	const routing_node = ctx.uci.get(ctx.config, target, 'node');
+	if (routing_node === 'urltest' || routing_node === 'selector') {
 		return {
 			type: routing_node,
 			outbound: outboundTag(ctx, target),
@@ -115,10 +179,17 @@ export function get_routing_target_outbound(ctx, target, owner) {
 	return resolved.outbound;
 };
 
-export function get_valid_selector_outbounds(ctx, selector_nodes, owner) {
+export function get_valid_selector_outbounds(ctx, selector_nodes, owner, owner_section) {
 	let outbounds = [];
 
 	for (let node_id in selector_nodes) {
+		if (owner_section && routing_node_has_path(ctx, node_id, owner_section, {})) {
+			report(ctx, 'error',
+				sprintf('路由节点配置错误：Selector %s 与 %s 形成循环引用。', owner, node_id),
+				'进入 LuCI 界面 -> 服务 -> HomeProxy -> 路由节点，检查 Selector 节点列表、默认节点和上游出站配置');
+			continue;
+		}
+
 		const outbound = get_routing_target_outbound(
 			ctx,
 			node_id,

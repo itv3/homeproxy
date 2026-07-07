@@ -76,13 +76,22 @@
    - 同名节点、保留 tag、内部 `cfg-*` 命名空间冲突时，会生成稳定后缀，避免重复 tag。
    - ShadowTLS 中间层会同步映射，且仍由 HomeProxy 面板代理隐藏。
 
-8. 自定义 Release 自动发布
+8. 订阅导入和运行兜底增强
+
+   - 订阅更新支持识别 Surge / Clash 托管配置中的 `proxies:` 节点列表。
+   - 订阅节点带 TLS 证书指纹但当前 sing-box 不支持时，默认跳过并写入诊断；可显式开启兼容回退。
+   - 删除失效订阅节点时，会同步清理主节点、路由节点、路由规则、DNS、规则集中的引用。
+   - 非 `custom` 路由模式下，主节点为空时可回退使用 `routing.default_outbound`。
+   - 订阅拉取失败时会记录诊断；`wget` 会在普通拉取失败后尝试 IPv4 回退。
+   - 订阅更新的重启语义与 `update_via_proxy` 有关：未启用“使用代理更新”时，成功更新后会重启 HomeProxy；启用后，只有节点新增、更新、删除，或主节点 / 主 UDP 节点因失效订阅节点被清空时才重启。完全没有可用节点时只记录失败状态和诊断；脚本异常时会按兜底逻辑重启服务。
+
+9. 自定义 Release 自动发布
 
    - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
    - 打 `custom-*` tag 后会现场构建内置中文翻译的签名 APK 和 v3 软件源索引，并自动发布到 GitHub Releases。
    - 一键安装会自动导入公钥、配置软件源并安装 / 升级 HomeProxy。
 
-9. 定时检查上游更新
+10. 定时检查上游更新
 
    - GitHub Actions 每天检查一次 `immortalwrt/homeproxy:master`。
    - 如果上游有新提交，会创建或更新带 `upstream-update` 标签的 Issue。
@@ -165,16 +174,29 @@ htdocs/luci-static/resources/view/homeproxy/backup.js   # HomeProxy 源配置备
 htdocs/luci-static/resources/homeproxy/dashboard.js     # MetaCubeXD 面板入口 helper
 htdocs/luci-static/resources/homeproxy/diagnostics.js   # 配置诊断前端 helper
 htdocs/luci-static/resources/homeproxy/node-filter.js   # 节点正则预览前端 helper
+htdocs/luci-static/resources/homeproxy/routing-node.js  # 路由节点前端 helper
 htdocs/luci-static/resources/homeproxy/tcping.js        # 节点测速前端 helper
 root/etc/homeproxy/scripts/generate_client.uc           # 生成 sing-box 客户端配置
+root/etc/homeproxy/scripts/clash_api.uc                 # Clash API controller 地址解析和本机地址归一化 helper
 root/etc/homeproxy/scripts/clash_api_proxy.uc           # MetaCubeXD 读取用 Clash API 过滤代理
+root/etc/homeproxy/scripts/homeproxy.uc                 # 公共工具函数和订阅下载 helper
 root/etc/homeproxy/scripts/migrate_config.uc            # 旧配置迁移和默认配置补齐
 root/etc/homeproxy/scripts/node_filter.uc               # 节点正则限制 helper
+root/etc/homeproxy/scripts/node_references.uc           # 节点引用收集和删除订阅节点清理
+root/etc/homeproxy/scripts/outbound_tag.uc              # outbound tag 映射和去重
 root/etc/homeproxy/scripts/routing_target.uc            # 路由节点解析 helper
+root/etc/homeproxy/scripts/subscription_parsers.uc      # Surge / Clash 托管配置 parser
+root/etc/homeproxy/scripts/update_subscriptions.uc      # 订阅导入、节点增删改和重启调度
+root/etc/homeproxy/scripts/firewall_pre.uc              # TUN 启动前置规则
+root/etc/homeproxy/scripts/firewall_post.ut             # nftables 规则模板
+root/etc/init.d/homeproxy                               # procd 启动、TProxy/TUN 路由和面板代理实例
 root/etc/config/homeproxy                               # 新安装时的默认配置
-root/usr/share/rpcd/ucode/luci.homeproxy                # HomeProxy RPC，包括备份 / 恢复
+root/usr/share/rpcd/ucode/luci.homeproxy                # HomeProxy 基础 RPC
+root/usr/share/rpcd/ucode/luci.homeproxy_backup         # HomeProxy 备份 / 恢复 RPC
+root/usr/share/rpcd/ucode/luci.homeproxy_node_tools     # 节点引用、节点正则预览、订阅更新和诊断 RPC
 root/usr/share/rpcd/ucode/luci.homeproxy_tcping         # 节点测速 RPC
 tests/generator-golden                                  # 生成器 golden fixture 和目标机运行器
+docs/security/OUTBOUND_TAG_RENAME_DESIGN.md             # outbound tag 可读化长期设计记录
 .github/build-ipk.sh                                    # APK/IPK 打包脚本
 .github/workflows/build-ipk.yml                        # push / PR 后自动构建 APK/IPK artifact
 .github/workflows/release-custom-apk.yml               # tag 后现场构建 APK 并发布 GitHub Release
@@ -201,7 +223,7 @@ sh -n install.sh
 node tests/generator-golden/check_cases.js
 ```
 
-如果改了 `generate_client.uc`，还需要在带 `ucode` 的 OpenWrt/ImmortalWrt 目标机上运行完整 golden fixture：
+如果改了 `generate_client.uc`，还需要在带 `ucode` 的 OpenWrt/ImmortalWrt 目标机上运行完整 golden fixture。CI 的 `Build ipk for HomeProxy` 也会在 OpenWrt rootfs 容器中执行这一步：
 
 ```sh
 ucode -S tests/generator-golden/run_cases.uc tests/generator-golden
@@ -281,7 +303,14 @@ htdocs/luci-static/resources/view/homeproxy/client.js
 htdocs/luci-static/resources/view/homeproxy/node.js
 root/etc/homeproxy/scripts/generate_client.uc
 root/etc/homeproxy/scripts/outbound_tag.uc
+root/etc/homeproxy/scripts/routing_target.uc
+root/etc/homeproxy/scripts/node_references.uc
+root/etc/homeproxy/scripts/update_subscriptions.uc
+root/etc/homeproxy/scripts/homeproxy.uc
 root/etc/homeproxy/scripts/migrate_config.uc
+root/etc/homeproxy/scripts/firewall_pre.uc
+root/etc/homeproxy/scripts/firewall_post.ut
+root/etc/init.d/homeproxy
 root/etc/config/homeproxy
 root/usr/share/rpcd/ucode/luci.homeproxy
 ```
@@ -297,6 +326,8 @@ root/usr/share/rpcd/ucode/luci.homeproxy
 - HomeProxy 源配置备份 / 恢复。
 - MetaCubeXD 面板入口、Clash API 默认配置和面板代理。
 - 运行时 outbound tag 映射为节点真实名称。
+- Surge / Clash 托管配置订阅解析、TLS 证书指纹兼容策略。
+- 非 `custom` 模式下 `default_outbound` 兜底，以及订阅删除时的引用清理。
 
 ### 2. 本地检查
 

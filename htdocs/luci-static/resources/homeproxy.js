@@ -249,16 +249,16 @@ return baseclass.extend({
 		}
 
 		ui.addNotification(null, E('div', { 'style': 'color:%s;'.format(noticeColor) }, [
-			E('p', { 'style': 'color:%s;font-weight:600;'.format(noticeColor) }, _('HomeProxy 发现以下问题，请检查并手动修复：')),
+			E('p', { 'style': 'color:%s;font-weight:600;'.format(noticeColor) }, _('HomeProxy found the following issues. Check and fix them manually:')),
 			E('p', { 'style': 'color:%s;font-weight:600;'.format(noticeAccentColor) },
 				generatedAt
-					? _('以下诊断来自上次配置生成或订阅更新（%s）。修复后请重新应用、重启服务或重新更新订阅以刷新诊断。').format(generatedAt)
-					: _('以下诊断来自上次配置生成或订阅更新。修复后请重新应用、重启服务或重新更新订阅以刷新诊断。')),
+					? _('These diagnostics are from the last configuration generation or subscription update (%s). Re-apply, restart the service, or update subscriptions again after fixing them to refresh diagnostics.').format(generatedAt)
+					: _('These diagnostics are from the last configuration generation or subscription update. Re-apply, restart the service, or update subscriptions again after fixing them to refresh diagnostics.')),
 			E('ul', { 'style': 'color:%s;'.format(noticeColor) }, items.map((item) => E('li', { 'style': 'color:%s;'.format(noticeColor) }, [
 				E('strong', { 'style': 'color:%s;'.format(noticeColor) }, '[' + (item.type || 'warning') + '] '),
 				item.message || '',
 				item.suggestion ? E('div', { 'style': 'margin-top:.2em;color:%s;font-weight:600;'.format(noticeAccentColor) },
-					_('建议：') + item.suggestion) : ''
+					_('Suggestion:') + item.suggestion) : ''
 			])))
 		]), 'warning', 'homeproxy-config-diagnostics');
 	},

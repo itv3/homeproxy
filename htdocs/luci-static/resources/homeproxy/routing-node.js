@@ -46,6 +46,27 @@ return baseclass.extend({
 		return proxy_nodes[node_id] || routing_node_names[node_id] || node_id;
 	},
 
+	toArray(value) {
+		if (!value)
+			return [];
+		return Array.isArray(value) ? value : [ value ];
+	},
+
+	routingNodeEdges(res) {
+		let edges = [];
+
+		if (res.node === 'selector') {
+			edges = edges.concat(this.toArray(res.selector_nodes));
+			edges = edges.concat(this.toArray(res.selector_default));
+		} else if (res.node === 'urltest') {
+			edges = edges.concat(this.toArray(res.urltest_nodes));
+		} else {
+			edges = edges.concat(this.toArray(res.node));
+		}
+
+		return edges.concat(this.toArray(res.outbound));
+	},
+
 	selectorHasPath(uci_config, start, target, path_cache, seen) {
 		if (!start || !target)
 			return false;
@@ -66,16 +87,15 @@ return baseclass.extend({
 			if (found || res['.name'] !== start)
 				return;
 
-			let nodes = res.node === 'urltest' ? res.urltest_nodes : res.selector_nodes;
-			for (let i in (nodes || [])) {
-				if (nodes[i] === target || this.selectorHasPath(uci_config, nodes[i], target, path_cache, seen)) {
+			if (res.enabled !== '1' || !res.node)
+				return;
+
+			for (let node_id of this.routingNodeEdges(res)) {
+				if (node_id === target || this.selectorHasPath(uci_config, node_id, target, path_cache, seen)) {
 					found = true;
 					return;
 				}
 			}
-
-			if (res.outbound === target || this.selectorHasPath(uci_config, res.outbound, target, path_cache, seen))
-				found = true;
 		});
 
 		path_cache[key] = found;

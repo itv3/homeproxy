@@ -127,9 +127,13 @@ start_service() {
 		config_get table_mark "infra" "table_mark" "100"
 		case "$proxy_mode" in
 		"redirect_tproxy")
-			local outbound_udp_node
+			local outbound_udp_node main_node_for_routing default_outbound_for_routing use_default_outbound_routing
 			config_get outbound_udp_node "config" "main_udp_node" "nil"
-			if [ "$outbound_udp_node" != "nil" ] || [ "$outbound_node" != "nil" ]; then
+			config_get main_node_for_routing "config" "main_node" "nil"
+			config_get default_outbound_for_routing "routing" "default_outbound" "nil"
+			[ "$routing_mode" != "custom" ] && [ "$main_node_for_routing" = "nil" ] && [ "$default_outbound_for_routing" != "nil" ] \
+				&& use_default_outbound_routing="1" || use_default_outbound_routing="0"
+			if [ "$outbound_udp_node" != "nil" ] || [ "$routing_mode" = "custom" ] || [ "$use_default_outbound_routing" = "1" ]; then
 				local tproxy_mark
 				config_get tproxy_mark "infra" "tproxy_mark" "101"
 

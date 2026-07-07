@@ -96,10 +96,10 @@ return baseclass.extend({
 				'href': url,
 				'target': '_blank',
 				'rel': 'noreferrer noopener'
-			}, [ _('MetaCubeXD 面板') ]),
+			}, [ _('MetaCubeXD Dashboard') ]),
 			E('span', {
 				'style': 'display:block;margin-top:.35em;color:var(--text-color-medium,#666);font-size:90%;'
-			}, _('使用远程 MetaCubeXD 面板时，Clash API secret 会提供给该网页。安全要求较高时请使用自建面板或本地面板。'))
+			}, _('When using the remote MetaCubeXD dashboard, the Clash API secret is provided to that web page. Use a self-hosted or local dashboard when stronger security is required.'))
 		]);
 	}
 });

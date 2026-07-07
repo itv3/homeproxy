@@ -6,6 +6,7 @@ import { cursor } from 'uci';
 import { urlencode } from 'luci.http';
 
 import { build_outbound_tag_map, get_outbound_tag } from '/etc/homeproxy/scripts/outbound_tag.uc';
+import { parse_controller } from '/etc/homeproxy/scripts/clash_api.uc';
 
 const TCPING_MAX_NODES = 300;
 const SECTION_MAX_LEN = 128;
@@ -27,9 +28,11 @@ function pathSegment(value) {
 }
 
 function controllerBase(hpuci) {
-	let controller = hpuci.get('homeproxy', 'config', 'clash_api_external_controller') || '127.0.0.1:9090',
-	    port = match(controller, /:([0-9]+)$/),
-	    port_num = port ? int(port[1]) : 9090;
+	let controller = parse_controller(
+		hpuci.get('homeproxy', 'config', 'clash_api_external_controller') || '127.0.0.1:9090',
+		9090
+	);
+	let port_num = controller.port || 9090;
 
 	if (port_num < 1 || port_num > 65535)
 		return null;

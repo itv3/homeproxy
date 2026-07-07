@@ -10,45 +10,52 @@
 			"ubus": {
 				"service": [ "list" ],
 				"luci.homeproxy": [
-					"config_diagnostics",
+					"acllist_read",
 					"connection_check",
+					"resources_get_version",
+					"singbox_get_features"
+				],
+				"luci.homeproxy_node_tools": [
+					"config_diagnostics",
 					"node_references",
 					"preview_node_filter",
-					"resources_get_version",
-					"singbox_get_features",
 					"update_subscriptions_status",
 					"validate_regex"
+				]
+			},
+			"uci": [ "homeproxy" ]
+		},
+		"write": {
+			"file": {
+				"/tmp/homeproxy_certificate.tmp": [ "write" ],
+				"/tmp/homeproxy-backup-*.tar.gz": [ "read" ],
+				"/tmp/homeproxy-restore-*.tar.gz": [ "write" ]
+			},
+			"ubus": {
+				"luci.homeproxy": [
+					"acllist_read",
+					"acllist_write",
+					"certificate_write",
+					"log_clean",
+					"resources_update",
+					"singbox_generator"
+				],
+				"luci.homeproxy_backup": [
+					"backup_cleanup",
+					"backup_create",
+					"backup_get_upload_path",
+					"backup_restore",
+					"backup_validate"
+				],
+				"luci.homeproxy_node_tools": [
+					"remove_subscription_nodes",
+					"update_subscriptions"
 				],
 				"luci.homeproxy_tcping": [
 					"node_tcping",
 					"nodes_tcping"
 				]
 			},
-			"uci": [ "homeproxy" ]
-		},
-			"write": {
-				"file": {
-					"/tmp/homeproxy_certificate.tmp": [ "write" ],
-					"/tmp/homeproxy-backup-*.tar.gz": [ "read" ],
-					"/tmp/homeproxy-restore-*.tar.gz": [ "write" ]
-			},
-			"ubus": {
-				"luci.homeproxy": [
-					"acllist_read",
-					"acllist_write",
-					"backup_cleanup",
-					"backup_create",
-					"backup_get_upload_path",
-					"backup_validate",
-					"backup_restore",
-						"certificate_write",
-						"log_clean",
-						"remove_subscription_nodes",
-						"resources_update",
-						"singbox_generator",
-						"update_subscriptions"
-					]
-				},
 			"uci": [ "homeproxy" ]
 		}
 	}

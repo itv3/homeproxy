@@ -118,7 +118,9 @@ function previewManualNodeAllowed(uci, config, node_id, node_mode) {
 		if (node_id in ['direct-out', 'block-out'])
 			return true;
 
-		if (section_type === 'routing_node' && !isEmpty(uci.get(config, node_id, 'node')))
+		if (section_type === 'routing_node' &&
+		    uci.get(config, node_id, 'enabled') === '1' &&
+		    !isEmpty(uci.get(config, node_id, 'node')))
 			return true;
 	}
 

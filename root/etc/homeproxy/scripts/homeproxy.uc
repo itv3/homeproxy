@@ -81,7 +81,7 @@ export function wGETResult(url, ua) {
 	let last_result = null;
 
 	for (let extra in [ '', '-4' ]) {
-		const output = executeCommand(`/usr/bin/wget ${extra} -O- --user-agent ${shellQuote(ua)} --timeout=10 ${shellQuote(url)}`) || {};
+		const output = executeCommand(`/usr/bin/wget -q ${extra} -O- --user-agent ${shellQuote(ua)} --timeout=10 ${shellQuote(url)}`) || {};
 
 		output.stdout = trim(output.stdout);
 		output.stderr = trim(output.stderr);
