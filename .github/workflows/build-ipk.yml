@@ -162,6 +162,7 @@ jobs:
             -w /work \
             openwrt/rootfs:x86-64 \
             /bin/sh -ec '
+              mkdir -p /var/lock /var/run
               if command -v apk >/dev/null 2>&1; then
                 apk update
                 apk add ucode ucode-mod-fs ucode-mod-math ucode-mod-uci ucode-mod-ubus luci-base
