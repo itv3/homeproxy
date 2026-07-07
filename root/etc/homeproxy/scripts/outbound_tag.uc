@@ -165,8 +165,7 @@ export function build_outbound_tag_map(uci) {
 	const uciconfig = 'homeproxy';
 	let items = [],
 	    used_tags = {},
-	    tag_map = {},
-	    routing_mode = uci.get(uciconfig, 'config', 'routing_mode') || 'bypass_mainland_china';
+	    tag_map = {};
 
 	const reserved_tags = [
 		'GLOBAL', 'any',
@@ -196,14 +195,13 @@ export function build_outbound_tag_map(uci) {
 		});
 	});
 
-	if (routing_mode === 'custom')
-		uci.foreach(uciconfig, 'routing_node', (cfg) => {
-			if (cfg.enabled === '1' && cfg.node in ['selector', 'urltest'])
-				push(items, {
-					section: cfg['.name'],
-					label: cfg.label
-				});
-		});
+	uci.foreach(uciconfig, 'routing_node', (cfg) => {
+		if (cfg.enabled === '1' && cfg.node in ['selector', 'urltest'])
+			push(items, {
+				section: cfg['.name'],
+				label: cfg.label
+			});
+	});
 
 	sort_outbound_tag_items(items);
 
