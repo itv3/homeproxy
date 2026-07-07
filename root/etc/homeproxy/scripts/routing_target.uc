@@ -235,7 +235,7 @@ export function get_outbound(ctx, cfg, fallback, owner) {
 	case 'direct-out':
 		return cfg;
 	default:
-		const resolved = resolve_outbound_target(ctx, cfg, owner, []);
+		const resolved = resolve_outbound_target(ctx, cfg, null, []);
 
 		if (!resolved || resolved.fatal) {
 			report(ctx, 'warning',
