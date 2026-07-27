@@ -795,7 +795,7 @@ msgstr "ECH 密钥"
 #: htdocs/luci-static/resources/view/homeproxy/client.js:1118
 #: htdocs/luci-static/resources/view/homeproxy/client.js:1405
 msgid "EDNS Client subnet"
-msgstr "ENDS 客户端子网"
+msgstr "EDNS 客户端子网"
 
 #: htdocs/luci-static/resources/view/homeproxy/node.js:1053
 #: htdocs/luci-static/resources/view/homeproxy/server.js:481
