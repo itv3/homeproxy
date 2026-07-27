@@ -13,7 +13,7 @@ on:
 env:
   UPSTREAM_REPO: immortalwrt/homeproxy
   UPSTREAM_BRANCH: master
-  CUSTOM_BRANCH: custom/homeproxy-enhancements
+  MAINTAINED_BRANCH: master
   ISSUE_LABEL: upstream-update
   ISSUE_TITLE: HomeProxy upstream has updates
 
@@ -22,10 +22,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout custom branch
+      - name: Checkout maintained branch
         uses: actions/checkout@v6
         with:
-          ref: custom/homeproxy-enhancements
+          ref: master
           fetch-depth: 0
 
       - name: Compare with upstream
@@ -50,9 +50,9 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
           if [ "${upstream_ahead}" -gt 0 ]; then
-            echo "::warning title=Upstream HomeProxy updated::${UPSTREAM_REPO}/${UPSTREAM_BRANCH} has ${upstream_ahead} commit(s) not yet merged into ${CUSTOM_BRANCH}."
+            echo "::warning title=Upstream HomeProxy updated::${UPSTREAM_REPO}/${UPSTREAM_BRANCH} has ${upstream_ahead} commit(s) not yet merged into ${MAINTAINED_BRANCH}."
           else
-            echo "::notice title=Upstream HomeProxy checked::${CUSTOM_BRANCH} already contains ${UPSTREAM_REPO}/${UPSTREAM_BRANCH}."
+            echo "::notice title=Upstream HomeProxy checked::${MAINTAINED_BRANCH} already contains ${UPSTREAM_REPO}/${UPSTREAM_BRANCH}."
           fi
 
       - name: Create or update upstream update issue
@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
 
           if ! gh label create "${ISSUE_LABEL}" \
-            --description "Upstream HomeProxy has commits not merged into the custom branch" \
+            --description "Upstream HomeProxy has commits not merged into the maintained branch" \
             --color "fbca04" 2>label-create-error.txt; then
             if ! grep -qi "already exists" label-create-error.txt; then
               cat label-create-error.txt >&2
@@ -79,7 +79,7 @@ jobs:
           body_file="$(mktemp)"
 
           {
-            echo "Detected ${UPSTREAM_AHEAD} upstream commit(s) not yet merged into \`${CUSTOM_BRANCH}\`."
+            echo "Detected ${UPSTREAM_AHEAD} upstream commit(s) not yet merged into \`${MAINTAINED_BRANCH}\`."
             echo
             echo "- Upstream: \`${UPSTREAM_REPO}/${UPSTREAM_BRANCH}\`"
             echo "- Upstream HEAD: \`${UPSTREAM_SHA}\`"
@@ -95,7 +95,7 @@ jobs:
             echo
             echo "1. Open \`README.md\`."
             echo "2. Follow the section \`HomeProxy 上游更新后怎么办\`."
-            echo "3. Merge upstream, resolve conflicts, run checks, push the custom branch, then publish a new custom release."
+            echo "3. Merge upstream, resolve conflicts, run checks, push the maintained branch, then publish a new custom release."
           } > "${body_file}"
 
           if [ -n "${issue_number}" ]; then
@@ -116,5 +116,5 @@ jobs:
           issue_number="$(gh issue list --state open --label "${ISSUE_LABEL}" --json number --jq '.[0].number // ""' 2>/dev/null || true)"
           if [ -n "${issue_number}" ]; then
             gh issue close "${issue_number}" \
-              --comment "The custom branch now contains ${UPSTREAM_REPO}/${UPSTREAM_BRANCH}."
+              --comment "The maintained branch now contains ${UPSTREAM_REPO}/${UPSTREAM_BRANCH}."
           fi

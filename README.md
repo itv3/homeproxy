@@ -6,7 +6,7 @@
 
 这是基于 [immortalwrt/homeproxy](https://github.com/immortalwrt/homeproxy) 的个人自定义版本。
 
-当前维护分支：[`custom/homeproxy-enhancements`](https://github.com/itv3/homeproxy/tree/custom/homeproxy-enhancements)
+当前维护分支：[`master`](https://github.com/itv3/homeproxy/tree/master)
 
 适用环境：
 
@@ -87,7 +87,7 @@
 
 9. 自定义 Release 自动发布
 
-   - push 到 `custom/homeproxy-enhancements` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
+   - push 到 `master` 后自动构建 APK/IPK artifact，用于检查构建是否成功。
    - 打 `custom-*` tag 后会现场构建内置中文翻译的签名 APK 和 v3 软件源索引，并自动发布到 GitHub Releases。
    - 一键安装会自动导入公钥、配置软件源并安装 / 升级 HomeProxy。
 
@@ -113,7 +113,7 @@
 适合全新安装、升级，以及从原版 HomeProxy 迁移：
 
 ```sh
-wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/custom/homeproxy-enhancements/install.sh | ash
+wget -O - https://github.com/itv3/homeproxy/raw/refs/heads/master/install.sh | ash
 ```
 
 脚本会自动导入公钥、添加软件源、更新索引并安装 / 升级 `homeproxy-custom`。如果软件源安装失败，会自动回退到直接 APK 安装。
@@ -209,7 +209,7 @@ install.sh                                              # 路由器一键安装�
 ```sh
 git clone git@github.com:itv3/homeproxy.git
 cd homeproxy
-git checkout custom/homeproxy-enhancements
+git checkout master
 git remote add upstream https://github.com/immortalwrt/homeproxy.git 2>/dev/null || true
 git fetch origin
 git fetch upstream
@@ -240,7 +240,7 @@ ruby -e 'require "yaml"; Dir[".github/workflows/*.yml"].each { |f| YAML.load_fil
 ```sh
 git add <changed-files>
 git commit -m "feat: describe the change"
-git push origin custom/homeproxy-enhancements
+git push origin master
 ```
 
 推送后 GitHub Actions 会自动构建 APK/IPK artifact，用来确认代码能正常打包。这个构建不会再提交 `dist/` 文件。
@@ -287,12 +287,12 @@ curl -fsSL https://api.github.com/repos/itv3/homeproxy/releases/latest \
 
 收到提醒后，推荐让开发者或 AI 按下面流程操作。
 
-### 1. 同步上游并合并到自定义分支
+### 1. 同步上游并合并到维护分支
 
 ```sh
 git fetch upstream
 git fetch origin
-git checkout custom/homeproxy-enhancements
+git checkout master
 git merge upstream/master
 ```
 
@@ -350,7 +350,7 @@ node --check htdocs/luci-static/resources/view/homeproxy/node.js
 ### 3. 推送并等待自动构建
 
 ```sh
-git push origin custom/homeproxy-enhancements
+git push origin master
 ```
 
 推送后 `Build ipk for HomeProxy` workflow 会自动构建 APK/IPK artifact，用来确认代码能正常打包。这个 workflow 不会再提交 `dist/` 文件。
