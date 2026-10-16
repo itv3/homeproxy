@@ -26,6 +26,7 @@ config homeproxy 'routing'
 config homeproxy 'dns'
 	option dns_strategy 'prefer_ipv4'
 	option default_server 'Proxy_DNS'
+	option independent_cache '1'
 
 config dns_server 'Proxy_DNS'
 	option label 'Proxy_DNS'
